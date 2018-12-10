@@ -8,9 +8,11 @@ import codecs
 
 from collections import Counter, defaultdict, OrderedDict
 from itertools import count
+from functools import partial
 
 import torch
 import torchtext.data
+from torchtext.data import Field
 import torchtext.vocab
 
 from onmt.inputters.dataset_base import UNK_WORD, PAD_WORD, BOS_WORD, EOS_WORD
@@ -35,10 +37,48 @@ torchtext.vocab.Vocab.__getstate__ = _getstate
 torchtext.vocab.Vocab.__setstate__ = _setstate
 
 
-def get_fields(data_type, n_src_features, n_tgt_features):
+def make_src(data, vocab):
+    src_size = max([t.size(0) for t in data])
+    src_vocab_size = max([t.max() for t in data]) + 1
+    alignment = torch.zeros(src_size, len(data), src_vocab_size)
+    for i, sent in enumerate(data):
+        for j, t in enumerate(sent):
+            alignment[j, i, t] = 1
+    return alignment
+
+
+def make_tgt(data, vocab):
+    tgt_size = max([t.size(0) for t in data])
+    alignment = torch.zeros(tgt_size, len(data)).long()
+    for i, sent in enumerate(data):
+        alignment[:sent.size(0), i] = sent
+    return alignment
+
+
+def make_img(data, vocab):
+    c = data[0].size(0)
+    h = max([t.size(1) for t in data])
+    w = max([t.size(2) for t in data])
+    imgs = torch.zeros(len(data), c, h, w).fill_(1)
+    for i, img in enumerate(data):
+        imgs[i, :, 0:img.size(1), 0:img.size(2)] = img
+    return imgs
+
+
+def make_audio(data, vocab):
+    """ batch audio data """
+    nfft = data[0].size(0)
+    t = max([t.size(1) for t in data])
+    sounds = torch.zeros(len(data), 1, nfft, t)
+    for i, spect in enumerate(data):
+        sounds[i, :, :, 0:spect.size(1)] = spect
+    return sounds
+
+
+def get_fields(src_data_type, n_src_features, n_tgt_features):
     """
     Args:
-        data_type: type of the source input. Options are [text|img|audio].
+        src_data_type: type of the source input. Options are [text|img|audio].
         n_src_features: the number of source features to
             create `torchtext.data.Field` for.
         n_tgt_features: the number of target features to
@@ -48,34 +88,74 @@ def get_fields(data_type, n_src_features, n_tgt_features):
         A dictionary whose keys are strings and whose values are the
         corresponding Field objects.
     """
-    if data_type == 'text':
-        return TextDataset.get_fields(n_src_features, n_tgt_features)
-    elif data_type == 'img':
-        return ImageDataset.get_fields(n_src_features, n_tgt_features)
-    elif data_type == 'audio':
-        return AudioDataset.get_fields(n_src_features, n_tgt_features)
+    assert src_data_type in ['text', 'img', 'audio'], \
+        "Data type not implemented"
+    fields = dict()
+
+    if src_data_type == 'text':
+        fields["src"] = Field(pad_token=PAD_WORD, include_lengths=True)
+        for i in range(n_src_features):
+            fields["src_feat_" + str(i)] = Field(pad_token=PAD_WORD)
+    elif src_data_type == 'img':
+        fields["src"] = Field(
+            use_vocab=False, dtype=torch.float,
+            postprocessing=make_img, sequential=False)
     else:
-        raise ValueError("Data type not implemented")
+        fields["src"] = Field(
+            use_vocab=False, dtype=torch.float,
+            postprocessing=make_audio, sequential=False)
+
+    if src_data_type == 'audio':
+        # only audio has src_lengths
+        fields["src_lengths"] = Field(
+            use_vocab=False, dtype=torch.long, sequential=False)
+    else:
+        # everything except audio has src_map and alignment
+        fields["src_map"] = Field(
+            use_vocab=False, dtype=torch.float,
+            postprocessing=make_src, sequential=False)
+
+        fields["alignment"] = Field(
+            use_vocab=False, dtype=torch.long,
+            postprocessing=make_tgt, sequential=False)
+
+    # below this: things defined for all source data types
+    fields["tgt"] = Field(
+        init_token=BOS_WORD, eos_token=EOS_WORD, pad_token=PAD_WORD)
+
+    for i in range(n_tgt_features):
+        fields["tgt_feat_" + str(i)] = Field(
+            init_token=BOS_WORD, eos_token=EOS_WORD, pad_token=PAD_WORD)
+
+    fields["indices"] = Field(
+        use_vocab=False, dtype=torch.long, sequential=False)
+
+    return fields
 
 
 def load_fields_from_vocab(vocab, data_type="text"):
     """
-    Load Field objects from `vocab.pt` file.
+    vocab: a list of (field name, torchtext.vocab.Vocab) pairs
+    data_type: text, img, or audio
+    returns: a dictionary whose keys are the field names and whose values
+             are field objects with the vocab set to the corresponding vocab
+             object from the input.
     """
     vocab = dict(vocab)
     n_src_features = len(collect_features(vocab, 'src'))
     n_tgt_features = len(collect_features(vocab, 'tgt'))
     fields = get_fields(data_type, n_src_features, n_tgt_features)
     for k, v in vocab.items():
-        # Hack. Can't pickle defaultdict :(
-        v.stoi = defaultdict(lambda: 0, v.stoi)
         fields[k].vocab = v
     return fields
 
 
 def save_fields_to_vocab(fields):
     """
-    Save Vocab objects in Field objects to `vocab.pt` file.
+    fields: a dictionary whose keys are field names and whose values are
+            Field objects
+    returns: a list of (field name, vocab) pairs for the fields that have a
+             vocabulary
     """
     vocab = []
     for k, f in fields.items():
@@ -184,9 +264,35 @@ def collect_feature_vocabs(fields, side):
     return feature_vocabs
 
 
+# min_len is misnamed
+'''
+def filter_seq(seq, min_len=0, max_len=float('inf')):
+    return min_len < len(seq) <= max_len
+
+
+def filter_example(ex, min_src_len=None, max_src_len=None,
+                   min_tgt_len=None, max_tgt_len=None):
+    return filter_seq(ex.src, min_src_len, max_src_len) and \
+        filter_seq(ex.tgt, min_tgt_len, max_tgt_len)
+'''
+
+
+def filter_example(ex, use_src_len=True, use_tgt_len=True,
+                   min_src_len=0, max_src_len=float('inf'),
+                   min_tgt_len=0, max_tgt_len=float('inf')):
+    """
+    A generalized function for filtering examples based on the length of their
+    src or tgt values. Rather than being used by itself as the filter_pred
+    argument to a dataset, it should be partially evaluated with everything
+    specified except the value of the example.
+    """
+    return (not use_src_len or min_src_len < len(ex.src) <= max_src_len) and \
+        (not use_tgt_len or min_tgt_len < len(ex.tgt) <= max_tgt_len)
+
+
 def build_dataset(fields, data_type, src_data_iter=None, src_path=None,
                   src_dir=None, tgt_data_iter=None, tgt_path=None,
-                  src_seq_length=0, tgt_seq_length=0,
+                  src_seq_len=0, tgt_seq_len=0,
                   src_seq_length_trunc=0, tgt_seq_length_trunc=0,
                   dynamic_dict=True, sample_rate=0,
                   window_size=0, window_stride=0, window=None,
@@ -244,25 +350,30 @@ def build_dataset(fields, data_type, src_data_iter=None, src_path=None,
         TextDataset.make_text_examples_nfeats_tpl(
             tgt_data_iter, tgt_path, tgt_seq_length_trunc, "tgt")
 
+    # I'm not certain about the practical utility of the second part
+    if use_filter_pred and tgt_examples_iter is not None:
+        filter_pred = partial(
+            filter_example, use_src_len=data_type == 'text',
+            max_src_len=src_seq_len, max_tgt_len=tgt_seq_len
+        )
+    else:
+        filter_pred = None
+
     if data_type == 'text':
         dataset = TextDataset(fields, src_examples_iter, tgt_examples_iter,
                               num_src_feats, num_tgt_feats,
-                              src_seq_length=src_seq_length,
-                              tgt_seq_length=tgt_seq_length,
                               dynamic_dict=dynamic_dict,
-                              use_filter_pred=use_filter_pred)
+                              filter_pred=filter_pred)
 
     elif data_type == 'img':
         dataset = ImageDataset(fields, src_examples_iter, tgt_examples_iter,
                                num_src_feats, num_tgt_feats,
-                               tgt_seq_length=tgt_seq_length,
-                               use_filter_pred=use_filter_pred,
+                               filter_pred=filter_pred,
                                image_channel_size=image_channel_size)
 
     elif data_type == 'audio':
         dataset = AudioDataset(fields, src_examples_iter, tgt_examples_iter,
-                               tgt_seq_length=tgt_seq_length,
-                               use_filter_pred=use_filter_pred)
+                               filter_pred=filter_pred)
 
     return dataset
 
@@ -413,7 +524,6 @@ def load_vocabulary(vocabulary_path, tag=""):
 
 
 class OrderedIterator(torchtext.data.Iterator):
-    """ Ordered Iterator Class """
 
     def create_batches(self):
         """ Create batches """
@@ -439,7 +549,7 @@ class DatasetLazyIter(object):
         and lazy loading.
 
     Args:
-        datsets (list): a list of datasets, which are lazily loaded.
+        datasets (list): a list of datasets, which are lazily loaded.
         fields (dict): fields dict for the datasets.
         batch_size (int): batch size.
         batch_size_fn: custom batch process function.
@@ -530,10 +640,7 @@ def build_dataset_iter(datasets, fields, opt, is_train=True):
     else:
         batch_size_fn = None
 
-    if opt.gpu_ranks:
-        device = "cuda"
-    else:
-        device = "cpu"
+    device = "cuda" if opt.gpu_ranks else "cpu"
 
     return DatasetLazyIter(datasets, fields, batch_size, batch_size_fn,
                            device, is_train)
@@ -568,7 +675,7 @@ def lazily_load_dataset(corpus_type, opt):
         yield _lazy_dataset_loader(pt, corpus_type)
 
 
-def _load_fields(dataset, data_type, opt, checkpoint):
+def load_fields(dataset, data_type, opt, checkpoint):
     if checkpoint is not None:
         logger.info('Loading vocab from checkpoint at %s.' % opt.train_from)
         fields = load_fields_from_vocab(
