@@ -14,6 +14,7 @@ import torch
 import torchtext.data
 from torchtext.data import Field
 import torchtext.vocab
+from pytorch_pretrained_bert import BertTokenizer
 
 from onmt.inputters.dataset_base import UNK_WORD, PAD_WORD, BOS_WORD, EOS_WORD
 from onmt.inputters.text_dataset import TextDataset
@@ -379,11 +380,28 @@ def build_dataset(fields, data_type, src_data_iter=None, src_path=None,
 
 
 def _build_field_vocab(field, counter, **kwargs):
-    specials = list(OrderedDict.fromkeys(
-        tok for tok in [field.unk_token, field.pad_token, field.init_token,
-                        field.eos_token]
-        if tok is not None))
-    field.vocab = field.vocab_cls(counter, specials=specials, **kwargs)
+    if field.unk_token is None:
+        tokenizer = BertTokenizer.from_pretrained('bert-base-cased',
+                                                  do_lower_case=True)
+        vocab = tokenizer.vocab
+        specials = list(vocab.keys())[:106]
+        counter = Counter()
+        src_vocab_size = len(vocab)
+        logger.info('BERT vocab has %d tokens.' % src_vocab_size)
+        vocab_items = list(vocab.items())[106:]
+        for i, token in enumerate(vocab_items):
+            # keep the order of tokens specified in the vocab file by
+            # adding them to the counter with decreasing counting values
+            counter[token[0]] = src_vocab_size - i
+        field.vocab = field.vocab_cls(counter, specials=specials, **kwargs)
+        field.pad_token = '[PAD]'
+        field.unk_token = '[UNK]'
+    else:
+        specials = list(OrderedDict.fromkeys(
+            tok for tok in [field.unk_token, field.pad_token, field.init_token,
+                            field.eos_token]
+            if tok is not None))
+        field.vocab = field.vocab_cls(counter, specials=specials, **kwargs)
 
 
 def build_vocab(train_dataset_files, fields, data_type, share_vocab,

@@ -37,8 +37,7 @@ class DatasetBase(torchtext.data.Dataset):
         self.__dict__.update(_d)
 
     def __reduce_ex__(self, proto):
-        # This is a hack. Something is broken with torch pickle.
-        return super(DatasetBase, self).__reduce_ex__()
+        return super(DatasetBase, self).__reduce_ex__(proto)
 
     def save(self, path, remove_fields=True):
         if remove_fields:
