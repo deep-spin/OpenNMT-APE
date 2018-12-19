@@ -108,7 +108,8 @@ def build_save_dataset(corpus_type, fields, opt):
             window_size=opt.window_size,
             window_stride=opt.window_stride,
             window=opt.window,
-            image_channel_size=opt.image_channel_size
+            image_channel_size=opt.image_channel_size,
+            use_filter_pred=corpus_type == 'train' or opt.filter_valid
         )
 
         data_path = "{:s}.{:s}.{:d}.pt".format(opt.save_data, corpus_type, i)
@@ -160,6 +161,12 @@ def main():
     assert opt.shuffle == 0, \
         "-shuffle is not implemented. Please shuffle \
         your data before pre-processing."
+
+    assert os.path.isfile(opt.train_src) and os.path.isfile(opt.train_tgt), \
+        "Please check path of your train src and tgt files!"
+
+    assert os.path.isfile(opt.valid_src) and os.path.isfile(opt.valid_tgt), \
+        "Please check path of your valid src and tgt files!"
 
     init_logger(opt.log_file)
     logger.info("Extracting features...")
