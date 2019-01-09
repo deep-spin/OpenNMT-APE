@@ -230,12 +230,12 @@ def preprocess_opts(parser):
     group.add('--src_seq_length', '-src_seq_length', type=int, default=50,
               help="Maximum source sequence length")
     group.add('--src_seq_length_trunc', '-src_seq_length_trunc',
-              type=int, default=0,
+              type=int, default=None,
               help="Truncate source sequence length.")
     group.add('--tgt_seq_length', '-tgt_seq_length', type=int, default=50,
               help="Maximum target sequence length to keep.")
     group.add('--tgt_seq_length_trunc', '-tgt_seq_length_trunc',
-              type=int, default=0,
+              type=int, default=None,
               help="Truncate target sequence length.")
     group.add('--lower', '-lower', action='store_true', help='lowercase data')
     group.add('--filter_valid', '-filter_valid', action='store_true',
@@ -525,6 +525,19 @@ def translate_opts(parser):
               help="Create dynamic dictionaries")
     group.add('--share_vocab', '-share_vocab', action='store_true',
               help="Share source and target vocabulary")
+
+    group = parser.add_argument_group('Random Sampling')
+    group.add('--random_sampling_topk', '-random_sampling_topk',
+              default=1, type=int,
+              help="""Set this to -1 to do random sampling from full
+                      distribution. Set this to value k>1 to do random
+                      sampling restricted to the k most likely next tokens.
+                      Set this to 1 to use argmax or for doing beam
+                      search.""")
+    group.add('--random_sampling_temp', '-random_sampling_temp',
+              default=1., type=float,
+              help="""If doing random sampling, divide the logits by
+                       this before computing softmax during decoding.""")
 
     group = parser.add_argument_group('Beam')
     group.add('--fast', '-fast', action="store_true",

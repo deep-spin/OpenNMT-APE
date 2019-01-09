@@ -9,6 +9,7 @@
           users of this library) for the strategy things we do.
 """
 
+import torch
 import onmt.inputters as inputters
 import onmt.utils
 
@@ -30,10 +31,10 @@ def build_trainer(opt, device_id, model, fields,
         model_saver(:obj:`onmt.models.ModelSaverBase`): the utility object
             used to save the model
     """
-    train_loss = onmt.utils.loss.build_loss_compute(
-        model, fields["tgt"], opt)
+    tgt_field = fields['tgt'][0][1]
+    train_loss = onmt.utils.loss.build_loss_compute(model, tgt_field, opt)
     valid_loss = onmt.utils.loss.build_loss_compute(
-        model, fields["tgt"], opt, train=False)
+        model, tgt_field, opt, train=False)
 
     trunc_size = opt.truncated_decoder  # Badly named...
     shard_size = opt.max_generator_batches
@@ -110,7 +111,7 @@ class Trainer(object):
         # Set model in training mode.
         self.model.train()
 
-    def train(self, train_iter_fct, valid_iter_fct, train_steps, valid_steps):
+    def train(self, train_iter, valid_iter, train_steps, valid_steps):
         """
         The main training loops.
         by iterating over training data (i.e. `train_iter_fct`)
@@ -134,7 +135,6 @@ class Trainer(object):
         true_batchs = []
         accum = 0
         normalization = 0
-        train_iter = train_iter_fct()
 
         total_stats = onmt.utils.Statistics()
         report_stats = onmt.utils.Statistics()
@@ -186,7 +186,6 @@ class Trainer(object):
                             if self.gpu_verbose_level > 0:
                                 logger.info('GpuRank %d: validate step %d'
                                             % (self.gpu_rank, step))
-                            valid_iter = valid_iter_fct()
                             valid_stats = self.validate(valid_iter)
                             if self.gpu_verbose_level > 0:
                                 logger.info('GpuRank %d: gather valid stat \
@@ -206,7 +205,6 @@ class Trainer(object):
             if self.gpu_verbose_level > 0:
                 logger.info('GpuRank %d: we completed an epoch \
                             at step %d' % (self.gpu_rank, step))
-            train_iter = train_iter_fct()
 
         return total_stats
 
@@ -219,28 +217,29 @@ class Trainer(object):
         # Set model in validating mode.
         self.model.eval()
 
-        stats = onmt.utils.Statistics()
+        with torch.no_grad():
+            stats = onmt.utils.Statistics()
 
-        for batch in valid_iter:
-            src = inputters.make_features(batch, 'src', self.data_type)
-            if self.data_type == 'text':
-                _, src_lengths = batch.src
-            elif self.data_type == 'audio':
-                src_lengths = batch.src_lengths
-            else:
-                src_lengths = None
+            for batch in valid_iter:
+                src = inputters.make_features(batch, 'src', self.data_type)
+                if self.data_type == 'text':
+                    _, src_lengths = batch.src
+                elif self.data_type == 'audio':
+                    src_lengths = batch.src_lengths
+                else:
+                    src_lengths = None
 
-            tgt = inputters.make_features(batch, 'tgt')
+                tgt = inputters.make_features(batch, 'tgt')
 
-            # F-prop through the model.
-            outputs, attns = self.model(src, tgt, src_lengths)
+                # F-prop through the model.
+                outputs, attns = self.model(src, tgt, src_lengths)
 
-            # Compute loss.
-            batch_stats = self.valid_loss.monolithic_compute_loss(
-                batch, outputs, attns)
+                # Compute loss.
+                batch_stats = self.valid_loss.monolithic_compute_loss(
+                    batch, outputs, attns)
 
-            # Update statistics.
-            stats.update(batch_stats)
+                # Update statistics.
+                stats.update(batch_stats)
 
         # Set model back to training mode.
         self.model.train()
