@@ -11,7 +11,9 @@ import torch
 import torchtext.data
 from torchtext.data import Field
 from torchtext.vocab import Vocab
-from pytorch_pretrained_bert import BertTokenizer
+from pytorch_pretrained_bert import BertTokenizer, WordpieceTokenizer
+from pytorch_pretrained_bert import tokenization
+import collections
 
 from onmt.inputters.text_dataset import TextDataset
 from onmt.inputters.image_dataset import ImageDataset
@@ -19,6 +21,33 @@ from onmt.inputters.audio_dataset import AudioDataset
 from onmt.utils.logging import logger
 
 import gc
+
+
+class MyBertTokenizer(BertTokenizer):
+
+    def __init__(self, vocab_file, do_lower_case=False, max_len=None):
+        if not os.path.isfile(vocab_file):
+            raise ValueError(
+                "Can't find a vocabulary file at path '{}'."
+                "To load the vocabulary from a Google pretrained "
+                "model use "
+                "`tokenizer = "
+                "BertTokenizer.from_pretrained(PRETRAINED_MODEL_NAME)`".format(
+                    vocab_file))
+
+        self.vocab = tokenization.load_vocab(vocab_file)
+        self.ids_to_tokens = collections.OrderedDict(
+            [(ids, tok) for tok, ids in self.vocab.items()])
+        self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self.vocab)
+        self.max_len = max_len if max_len is not None else int(1e12)
+
+    def tokenize(self, text):
+        orig_tokens = tokenization.whitespace_tokenize(text)
+        split_tokens = []
+        for token in orig_tokens:
+            for sub_token in self.wordpiece_tokenizer.tokenize(token):
+                split_tokens.append(sub_token)
+        return split_tokens
 
 
 def _getstate(self):
@@ -74,8 +103,12 @@ def make_audio(data, vocab):
 
 # mix this with partial
 def _feature_tokenize(
-        string, layer=0, tok_delim=None, feat_delim=None, truncate=None):
-    tokens = string.split(tok_delim)
+        string, layer=0, tok_delim=None, feat_delim=None, truncate=None,
+        bert_tokenizer=None):
+    if bert_tokenizer is not None:
+        tokens = bert_tokenizer.tokenize(string)
+    else:
+        tokens = string.split(tok_delim)
     if truncate is not None:
         tokens = tokens[:truncate]
     if feat_delim is not None:
@@ -92,7 +125,9 @@ def get_fields(
     eos='</s>',
     dynamic_dict=False,
     src_truncate=None,
-    tgt_truncate=None
+    tgt_truncate=None,
+    bert_src=None,
+    bert_tgt=None
 ):
     """
     src_data_type: type of the source input. Options are [text|img|audio].
@@ -113,17 +148,36 @@ def get_fields(
 
     if src_data_type == 'text':
         feat_delim = u"￨" if n_src_feats > 0 else None
+
         for i in range(n_src_feats + 1):
             name = "src_feat_" + str(i - 1) if i > 0 else "src"
+
+            bert_tokenizer = None
+            if bert_src is not None:
+                bert_tokenizer = MyBertTokenizer.from_pretrained(
+                    bert_src)
+
             tokenize = partial(
                 _feature_tokenize,
                 layer=i,
                 truncate=src_truncate,
-                feat_delim=feat_delim)
+                feat_delim=feat_delim,
+                bert_tokenizer=bert_tokenizer)
+
             use_len = i == 0
-            feat = Field(
-                pad_token=pad, tokenize=tokenize, include_lengths=use_len)
+
+            if bert_src is not None:
+                feat = Field(
+                    pad_token='[PAD]',
+                    unk_token='[UNK]',
+                    tokenize=tokenize,
+                    include_lengths=use_len)
+            else:
+                feat = Field(
+                    pad_token=pad, tokenize=tokenize, include_lengths=use_len)
+
             fields['src'].append((name, feat))
+
     elif src_data_type == 'img':
         img = Field(
             use_vocab=False, dtype=torch.float,
@@ -144,17 +198,33 @@ def get_fields(
     feat_delim = u"￨" if n_tgt_feats > 0 else None
     for i in range(n_tgt_feats + 1):
         name = "tgt_feat_" + str(i - 1) if i > 0 else "tgt"
+
+        bert_tokenizer = None
+        if bert_tgt is not None:
+            bert_tokenizer = MyBertTokenizer.from_pretrained(
+                bert_tgt)
+
         tokenize = partial(
             _feature_tokenize,
             layer=i,
             truncate=tgt_truncate,
-            feat_delim=feat_delim)
+            feat_delim=feat_delim,
+            bert_tokenizer=bert_tokenizer)
 
-        feat = Field(
-            init_token=bos,
-            eos_token=eos,
-            pad_token=pad,
-            tokenize=tokenize)
+        if bert_tgt is not None:
+            feat = Field(
+                pad_token='[PAD]',
+                unk_token='[UNK]',
+                init_token='<S>',
+                eos_token='<T>',
+                tokenize=tokenize)
+        else:
+            feat = Field(
+                init_token=bos,
+                eos_token=eos,
+                pad_token=pad,
+                tokenize=tokenize)
+
         fields['tgt'].append((name, feat))
 
     indices = Field(use_vocab=False, dtype=torch.long, sequential=False)
@@ -300,10 +370,8 @@ def build_dataset(fields, data_type, src,
 
 
 def _build_field_vocab(field, counter, **kwargs):
-    if field.unk_token is None:
-        tokenizer = BertTokenizer.from_pretrained('bert-base-cased',
-                                                  do_lower_case=True)
-        vocab = tokenizer.vocab
+    if field.tokenize.keywords['bert_tokenizer'] is not None:
+        vocab = field.tokenize.keywords['bert_tokenizer'].vocab
         specials = list(vocab.keys())[:106]
         counter = Counter()
         src_vocab_size = len(vocab)
@@ -314,8 +382,6 @@ def _build_field_vocab(field, counter, **kwargs):
             # adding them to the counter with decreasing counting values
             counter[token[0]] = src_vocab_size - i
         field.vocab = field.vocab_cls(counter, specials=specials, **kwargs)
-        field.pad_token = '[PAD]'
-        field.unk_token = '[UNK]'
     else:
         # this is basically copy-pasted from torchtext.
         all_specials = [

@@ -161,7 +161,10 @@ def main():
         tgt_nfeats,
         dynamic_dict=opt.dynamic_dict,
         src_truncate=opt.src_seq_length_trunc,
-        tgt_truncate=opt.tgt_seq_length_trunc)
+        tgt_truncate=opt.tgt_seq_length_trunc,
+        bert_src=opt.bert_src,
+        bert_tgt=opt.bert_tgt
+        )
 
     logger.info("Building & saving training data...")
     train_dataset_files = build_save_dataset('train', fields, opt)

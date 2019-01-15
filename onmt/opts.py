@@ -66,7 +66,7 @@ def model_opts(parser):
                        Options are [text|img|audio].""")
 
     group.add('--encoder_type', '-encoder_type', type=str, default='rnn',
-              choices=['rnn', 'brnn', 'mean', 'transformer', 'cnn'],
+              choices=['rnn', 'brnn', 'mean', 'transformer', 'cnn', 'bert'],
               help="""Type of encoder layer to use. Non-RNN layers
                        are experimental. Options are
                        [rnn|brnn|mean|transformer|cnn].""")
@@ -75,6 +75,13 @@ def model_opts(parser):
               help="""Type of decoder layer to use. Non-RNN layers
                        are experimental. Options are
                        [rnn|transformer|cnn].""")
+
+    group.add('--bert_type', '-bert_type', type=str, default='bert-base-cased',
+              choices=['bert-base-cased', 'bert-base-uncased',
+                       'bert-large-cased', 'bert-large-uncased',
+                       'bert-base-multilingual-cased',
+                       'bert-base-chinese'],
+              help="""Type of BERT model.""")
 
     group.add('--layers', '-layers', type=int, default=-1,
               help='Number of layers in enc/dec.')
@@ -241,6 +248,19 @@ def preprocess_opts(parser):
     group.add('--filter_valid', '-filter_valid', action='store_true',
               help='Filter validation data by src and/or tgt length')
 
+    group.add('--bert_src', '-bert_src', type=str, default=None,
+              choices=['bert-base-cased', 'bert-base-uncased',
+                       'bert-large-cased', 'bert-large-uncased',
+                       'bert-base-multilingual-cased',
+                       'bert-base-chinese'],
+              help='Use bert preprocessing on src side.')
+    group.add('--bert_tgt', '-bert_tgt', type=str, default=None,
+              choices=['bert-base-cased', 'bert-base-uncased',
+                       'bert-large-cased', 'bert-large-uncased',
+                       'bert-base-multilingual-cased',
+                       'bert-base-chinese'],
+              help='Use bert preprocessing on tgt side.')
+
     # Data processing options
     group = parser.add_argument_group('Random')
     group.add('--shuffle', '-shuffle', type=int, default=0,
@@ -382,7 +402,7 @@ def train_opts(parser):
               help='Deprecated epochs see train_steps')
     group.add('--optim', '-optim', default='sgd',
               choices=['sgd', 'adagrad', 'adadelta', 'adam',
-                       'sparseadam', 'adafactor'],
+                       'sparseadam', 'adafactor', 'bertadam'],
               help="""Optimization method.""")
     group.add('--adagrad_accumulator_init', '-adagrad_accumulator_init',
               type=float, default=0,

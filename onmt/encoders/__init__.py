@@ -4,6 +4,7 @@ from onmt.encoders.transformer import TransformerEncoder
 from onmt.encoders.rnn_encoder import RNNEncoder
 from onmt.encoders.cnn_encoder import CNNEncoder
 from onmt.encoders.mean_encoder import MeanEncoder
+from onmt.encoders.bert_encoder import BERTEncoder
 
 __all__ = ["EncoderBase", "TransformerEncoder", "RNNEncoder", "CNNEncoder",
-           "MeanEncoder"]
+           "MeanEncoder", "BERTEncoder"]

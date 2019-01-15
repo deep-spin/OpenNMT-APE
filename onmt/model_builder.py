@@ -15,6 +15,7 @@ from onmt.encoders.cnn_encoder import CNNEncoder
 from onmt.encoders.mean_encoder import MeanEncoder
 from onmt.encoders.audio_encoder import AudioEncoder
 from onmt.encoders.image_encoder import ImageEncoder
+from onmt.encoders.bert_encoder import BERTEncoder
 
 from onmt.decoders.decoder import InputFeedRNNDecoder, StdRNNDecoder
 from onmt.decoders.transformer import TransformerDecoder
@@ -64,7 +65,9 @@ def build_encoder(opt, embeddings):
         opt: the option in current environment.
         embeddings (Embeddings): vocab embeddings for this encoder.
     """
-    if opt.encoder_type == "transformer":
+    if opt.encoder_type == "bert":
+        encoder = BERTEncoder()
+    elif opt.encoder_type == "transformer":
         encoder = TransformerEncoder(
             opt.enc_layers,
             opt.enc_rnn_size,
@@ -225,7 +228,7 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
         model_opt, tgt_fields[0], tgt_fields[1:], for_encoder=False)
 
     # Share the embedding matrix - preprocess with share_vocab required.
-    if model_opt.share_embeddings:
+    if model_opt.share_embeddings and model_opt.encoder_type != 'bert':
         # src/tgt vocab should be the same if `-share_vocab` is specified.
         assert src_fields[0].vocab == tgt_fields[0].vocab, \
             "preprocess with -share_vocab if you use share_embeddings"
@@ -268,8 +271,9 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
         checkpoint['model'] = {fix_key(k): v
                                for k, v in checkpoint['model'].items()}
         # end of patch for backward compatibility
-
-        model.load_state_dict(checkpoint['model'], strict=False)
+        model_dict = {k: v for k, v in checkpoint['model'].items()
+                      if 'bert' not in k}
+        model.load_state_dict(model_dict, strict=False)
         generator.load_state_dict(checkpoint['generator'], strict=False)
     else:
         if model_opt.param_init != 0.0:
@@ -291,6 +295,14 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
         if hasattr(model.decoder, 'embeddings'):
             model.decoder.embeddings.load_pretrained_vectors(
                 model_opt.pre_word_vecs_dec, model_opt.fix_word_vecs_dec)
+
+    if model_opt.encoder_type == 'bert':
+        model.encoder.initialize_bert(model_opt.bert_type, checkpoint)
+        if model_opt.share_embeddings:
+            decoder.embeddings.word_lut.weight = \
+                encoder.bert.embeddings.word_embeddings.weight
+        if model_opt.share_decoder_embeddings:
+            generator[0].weight = decoder.embeddings.word_lut.weight
 
     model.generator = generator
     model.to(device)

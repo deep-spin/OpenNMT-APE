@@ -2,6 +2,8 @@
 import torch
 import torch.optim as optim
 from torch.nn.utils import clip_grad_norm_
+from pytorch_pretrained_bert.optimization import BertAdam
+
 from onmt.utils import use_gpu
 import operator
 import functools
@@ -46,7 +48,8 @@ def build_optim(model, opt, checkpoint):
             adagrad_accum=opt.adagrad_accumulator_init,
             decay_method=opt.decay_method,
             warmup_steps=opt.warmup_steps,
-            model_size=opt.rnn_size)
+            model_size=opt.rnn_size,
+            total_train_steps=opt.train_steps)
 
     # Stage 1:
     # Essentially optim.set_parameters (re-)creates and optimizer using
@@ -162,7 +165,8 @@ class Optimizer(object):
                  adagrad_accum=0.0,
                  decay_method=None,
                  warmup_steps=4000,
-                 model_size=None):
+                 model_size=None,
+                 total_train_steps=None):
         self.last_ppl = None
         self.learning_rate = learning_rate
         self.original_lr = learning_rate
@@ -177,6 +181,7 @@ class Optimizer(object):
         self.decay_method = decay_method
         self.warmup_steps = warmup_steps
         self.model_size = model_size
+        self.total_train_steps = total_train_steps
 
     def set_parameters(self, model):
         """ ? """
@@ -213,6 +218,27 @@ class Optimizer(object):
                             betas=self.betas, eps=1e-8),
                  optim.SparseAdam(sparse, lr=self.learning_rate,
                                   betas=self.betas, eps=1e-8)])
+        elif self.method == 'bertadam':
+            decay_params = []
+            no_decay_params = []
+            no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+            for name, param in model.named_parameters():
+                if 'pooler' in name:
+                    continue
+                if not any(nd in name for nd in no_decay):
+                    decay_params.append(param)
+                elif any(nd in name for nd in no_decay):
+                    no_decay_params.append(param)
+            grouped_parameters = [
+                {'params': decay_params, 'weight_decay': 0.01},
+                {'params': no_decay_params, 'weight_decay': 0.0}
+                ]
+            # warmup = Proportion of training to perform
+            # linear learning rate warmup for.
+            self.optimizer = BertAdam(grouped_parameters,
+                                      lr=self.learning_rate,
+                                      warmup=0.1,
+                                      t_total=self.total_train_steps)
         else:
             raise RuntimeError("Invalid optim method: " + self.method)
 
