@@ -12,11 +12,12 @@ class BERTEncoder(EncoderBase):
         * memory_bank `[src_len x batch_size x model_dim]`
     """
 
-    def forward(self, src, lengths=None):
+    def forward(self, src, lengths=None, segments_ids=None):
         """ See :obj:`EncoderBase.forward()`"""
         self._check_args(src, lengths)
         encoded_layers, pooled_output = \
-            self.bert(src[:, :, 0].t(), output_all_encoded_layers=False)
+            self.bert(src[:, :, 0].t(), token_type_ids=segments_ids.t(),
+                      output_all_encoded_layers=False)
 
         return pooled_output.unsqueeze(0),\
             encoded_layers.transpose(0, 1), lengths
