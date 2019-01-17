@@ -483,7 +483,8 @@ def train_opts(parser):
     group.add('--tensorboard', '-tensorboard', action="store_true",
               help="""Use tensorboardX for visualization during training.
                        Must have the library tensorboardX.""")
-    group.add_argument("-tensorboard_log_dir", type=str,
+    group.add_argument("--tensorboard_log_dir", "-tensorboard_log_dir",
+                       type=str,
                        default="runs/onmt",
                        help="""Log directory for Tensorboard.
                        This is also the name of the run.
