@@ -49,6 +49,7 @@ def build_optim(model, opt, checkpoint):
             decay_method=opt.decay_method,
             warmup_steps=opt.warmup_steps,
             model_size=opt.rnn_size,
+            bert_warmup=opt.bert_warmup,
             total_train_steps=opt.train_steps)
 
     # Stage 1:
@@ -166,6 +167,7 @@ class Optimizer(object):
                  decay_method=None,
                  warmup_steps=4000,
                  model_size=None,
+                 bert_warmup=None,
                  total_train_steps=None):
         self.last_ppl = None
         self.learning_rate = learning_rate
@@ -181,6 +183,7 @@ class Optimizer(object):
         self.decay_method = decay_method
         self.warmup_steps = warmup_steps
         self.model_size = model_size
+        self.bert_warmup = bert_warmup
         self.total_train_steps = total_train_steps
 
     def set_parameters(self, model):
@@ -237,7 +240,9 @@ class Optimizer(object):
             # linear learning rate warmup for.
             self.optimizer = BertAdam(grouped_parameters,
                                       lr=self.learning_rate,
-                                      warmup=0.1,
+                                      b1=self.betas[0],
+                                      b2=self.betas[1],
+                                      warmup=self.bert_warmup,
                                       t_total=self.total_train_steps)
         else:
             raise RuntimeError("Invalid optim method: " + self.method)
