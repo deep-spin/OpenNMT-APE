@@ -109,6 +109,8 @@ def _feature_tokenize(
         tokens = bert_tokenizer.tokenize(string)
     else:
         tokens = string.split(tok_delim)
+    import ipdb
+    ipdb.set_trace()
     if truncate is not None:
         tokens = tokens[:truncate]
     if feat_delim is not None:
