@@ -487,6 +487,7 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
             gc.collect()
 
     for name, field in fields["tgt"]:
+        import ipdb; ipdb.set_trace()
         if field.has_vocab:
             _build_field_vocab(field, counters[name])
             logger.info(" * %s vocab size: %d." % (name, len(field.vocab)))
