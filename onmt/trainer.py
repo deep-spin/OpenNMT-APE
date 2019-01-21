@@ -271,7 +271,7 @@ class Trainer(object):
                 src_lengths = batch.src_lengths
             else:
                 src_lengths = None
-
+            import ipdb; ipdb.set_trace()
             segments_ids = batch.segments_ids
 
             tgt_outer = inputters.make_features(batch, 'tgt')
