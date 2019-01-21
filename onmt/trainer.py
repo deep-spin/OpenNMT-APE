@@ -229,7 +229,10 @@ class Trainer(object):
                 else:
                     src_lengths = None
 
-                segments_ids = batch.segments_ids
+                if hasattr(batch, 'segments_ids'):
+                    segments_ids = batch.segments_ids
+                else:
+                    segments_ids = batch.segments_ids
 
                 tgt = inputters.make_features(batch, 'tgt')
 
@@ -271,8 +274,11 @@ class Trainer(object):
                 src_lengths = batch.src_lengths
             else:
                 src_lengths = None
-            import ipdb; ipdb.set_trace()
-            segments_ids = batch.segments_ids
+
+            if hasattr(batch, 'segments_ids'):
+                segments_ids = batch.segments_ids
+            else:
+                segments_ids = batch.segments_ids
 
             tgt_outer = inputters.make_features(batch, 'tgt')
 
