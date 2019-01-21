@@ -185,6 +185,11 @@ def get_fields(
 
             fields['src'].append((name, feat))
 
+        if bert_src is not None:
+            segments_ids = Field(
+                use_vocab=False, dtype=torch.long, pad_token=0)
+            fields['src'].append(('segments_ids', segments_ids))
+
     elif src_data_type == 'img':
         img = Field(
             use_vocab=False, dtype=torch.float,
@@ -236,9 +241,6 @@ def get_fields(
 
     indices = Field(use_vocab=False, dtype=torch.long, sequential=False)
     fields["indices"] = [('indices', indices)]
-
-    segments_ids = Field(use_vocab=False, dtype=torch.long, pad_token=0)
-    fields["segments_ids"] = [('segments_ids', segments_ids)]
 
     if dynamic_dict:
         src_map = Field(
