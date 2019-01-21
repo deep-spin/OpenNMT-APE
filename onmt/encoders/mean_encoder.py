@@ -15,7 +15,7 @@ class MeanEncoder(EncoderBase):
         self.num_layers = num_layers
         self.embeddings = embeddings
 
-    def forward(self, src, lengths=None):
+    def forward(self, src, lengths=None, **kwargs):
         "See :obj:`EncoderBase.forward()`"
         self._check_args(src, lengths)
 
