@@ -95,7 +95,7 @@ class TransformerEncoder(EncoderBase):
              for _ in range(num_layers)])
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
 
-    def forward(self, src, lengths=None):
+    def forward(self, src, lengths=None, **kwargs):
         """ See :obj:`EncoderBase.forward()`"""
         self._check_args(src, lengths)
 

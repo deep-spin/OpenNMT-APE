@@ -75,7 +75,7 @@ class AudioEncoder(nn.Module):
                     nn.MaxPool1d(enc_pooling[l + 1]))
             setattr(self, 'batchnorm_%d' % (l + 1), batchnorm)
 
-    def forward(self, src, lengths=None):
+    def forward(self, src, lengths=None, **kwargs):
         "See :obj:`onmt.encoders.encoder.EncoderBase.forward()`"
 
         batch_size, _, nfft, t = src.size()

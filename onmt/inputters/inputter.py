@@ -103,18 +103,29 @@ def make_audio(data, vocab):
 
 # mix this with partial
 def _feature_tokenize(
-        string, layer=0, tok_delim=None, feat_delim=None, truncate=None,
-        bert_tokenizer=None):
-    if bert_tokenizer is not None:
-        tokens = bert_tokenizer.tokenize(string)
-    else:
-        tokens = string.split(tok_delim)
-    import ipdb
-    ipdb.set_trace()
+        string, layer=0, tok_delim=None, feat_delim=None, truncate=None):
+    tokens = string.split(tok_delim)
     if truncate is not None:
         tokens = tokens[:truncate]
     if feat_delim is not None:
         tokens = [t.split(feat_delim)[layer] for t in tokens]
+    return tokens
+
+
+def _bert_tokenize(string, layer=0, truncate=None, bert_tokenizer=None):
+    tokens = bert_tokenizer.tokenize(string)
+    if '[SEP]' in tokens:
+        src_A = ' '.join(tokens).split(' [SEP] ')[0]
+        src_B = ' '.join(tokens).split(' [SEP] ')[1]
+        src_A_len = len(src_A.split())
+        src_B_len = len(src_B.split())
+        segments_ids = [0]*src_A_len + [1]*src_B_len
+        tokens = ' '.join([src_A, src_B]).split()
+    else:
+        segments_ids = [0]*len(tokens)
+
+    if layer == 1:
+        tokens = segments_ids
     return tokens
 
 
@@ -154,17 +165,20 @@ def get_fields(
         for i in range(n_src_feats + 1):
             name = "src_feat_" + str(i - 1) if i > 0 else "src"
 
-            bert_tokenizer = None
             if bert_src is not None:
                 bert_tokenizer = MyBertTokenizer.from_pretrained(
                     bert_src)
-
-            tokenize = partial(
-                _feature_tokenize,
-                layer=i,
-                truncate=src_truncate,
-                feat_delim=feat_delim,
-                bert_tokenizer=bert_tokenizer)
+                tokenize = partial(
+                    _bert_tokenize,
+                    layer=i,
+                    truncate=src_truncate,
+                    bert_tokenizer=bert_tokenizer)
+            else:
+                tokenize = partial(
+                    _feature_tokenize,
+                    layer=i,
+                    truncate=src_truncate,
+                    feat_delim=feat_delim)
 
             use_len = i == 0
 
@@ -179,6 +193,19 @@ def get_fields(
                     pad_token=pad, tokenize=tokenize, include_lengths=use_len)
 
             fields['src'].append((name, feat))
+
+        if bert_src is not None:
+
+            tokenize = partial(
+                _bert_tokenize,
+                layer=i+1,
+                truncate=src_truncate,
+                bert_tokenizer=bert_tokenizer)
+
+            segments_ids = Field(
+                use_vocab=False, tokenize=tokenize,
+                dtype=torch.long, pad_token=0)
+            fields['src'].append(('segments_ids', segments_ids))
 
     elif src_data_type == 'img':
         img = Field(
@@ -201,19 +228,15 @@ def get_fields(
     for i in range(n_tgt_feats + 1):
         name = "tgt_feat_" + str(i - 1) if i > 0 else "tgt"
 
-        bert_tokenizer = None
         if bert_tgt is not None:
             bert_tokenizer = MyBertTokenizer.from_pretrained(
                 bert_tgt)
+            tokenize = partial(
+                _bert_tokenize,
+                layer=i,
+                truncate=tgt_truncate,
+                bert_tokenizer=bert_tokenizer)
 
-        tokenize = partial(
-            _feature_tokenize,
-            layer=i,
-            truncate=tgt_truncate,
-            feat_delim=feat_delim,
-            bert_tokenizer=bert_tokenizer)
-
-        if bert_tgt is not None:
             feat = Field(
                 pad_token='[PAD]',
                 unk_token='[UNK]',
@@ -221,6 +244,12 @@ def get_fields(
                 eos_token='<T>',
                 tokenize=tokenize)
         else:
+            tokenize = partial(
+                _feature_tokenize,
+                layer=i,
+                truncate=tgt_truncate,
+                feat_delim=feat_delim)
+
             feat = Field(
                 init_token=bos,
                 eos_token=eos,
@@ -231,9 +260,6 @@ def get_fields(
 
     indices = Field(use_vocab=False, dtype=torch.long, sequential=False)
     fields["indices"] = [('indices', indices)]
-
-    segments_ids = Field(use_vocab=False, dtype=torch.long, pad_token=0)
-    fields["segments_ids"] = [('segments_ids', segments_ids)]
 
     if dynamic_dict:
         src_map = Field(
@@ -461,12 +487,14 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
             gc.collect()
 
     for name, field in fields["tgt"]:
-        _build_field_vocab(field, counters[name])
-        logger.info(" * %s vocab size: %d." % (name, len(field.vocab)))
-    if data_type == 'text':
-        for name, field in fields["src"]:
+        if field.use_vocab:
             _build_field_vocab(field, counters[name])
             logger.info(" * %s vocab size: %d." % (name, len(field.vocab)))
+    if data_type == 'text':
+        for name, field in fields["src"]:
+            if field.use_vocab:
+                _build_field_vocab(field, counters[name])
+                logger.info(" * %s vocab size: %d." % (name, len(field.vocab)))
         if share_vocab:
             # `tgt_vocab_size` is ignored when sharing vocabularies
             logger.info(" * merging src and tgt vocab...")

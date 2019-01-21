@@ -229,13 +229,14 @@ class Trainer(object):
                 else:
                     src_lengths = None
 
-                segments_ids = batch.segments_ids
+                kwargs = {}
+                if hasattr(batch, 'segments_ids'):
+                    kwargs['segments_ids'] = batch.segments_ids
 
                 tgt = inputters.make_features(batch, 'tgt')
 
                 # F-prop through the model.
-                outputs, attns = self.model(src, tgt, src_lengths,
-                                            segments_ids=segments_ids)
+                outputs, attns = self.model(src, tgt, src_lengths, **kwargs)
 
                 # Compute loss.
                 batch_stats = self.valid_loss.monolithic_compute_loss(
@@ -272,7 +273,9 @@ class Trainer(object):
             else:
                 src_lengths = None
 
-            segments_ids = batch.segments_ids
+            kwargs = {}
+            if hasattr(batch, 'segments_ids'):
+                kwargs['segments_ids'] = batch.segments_ids
 
             tgt_outer = inputters.make_features(batch, 'tgt')
 
@@ -284,8 +287,7 @@ class Trainer(object):
                 if self.grad_accum_count == 1:
                     self.model.zero_grad()
                 outputs, attns = \
-                    self.model(src, tgt, src_lengths,
-                               segments_ids=segments_ids)
+                    self.model(src, tgt, src_lengths, **kwargs)
 
                 # 3. Compute loss in shards for memory efficiency.
                 batch_stats = self.train_loss.sharded_compute_loss(

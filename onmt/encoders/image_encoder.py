@@ -51,7 +51,7 @@ class ImageEncoder(nn.Module):
         """ Pass in needed options only when modify function definition."""
         pass
 
-    def forward(self, src, lengths=None):
+    def forward(self, src, lengths=None, **kwargs):
         "See :obj:`onmt.encoders.encoder.EncoderBase.forward()`"
 
         batch_size = src.size(0)

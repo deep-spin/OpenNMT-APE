@@ -39,8 +39,9 @@ def build_embeddings(opt, word_field, feat_fields, for_encoder=True):
     word_padding_idx = word_field.vocab.stoi[word_field.pad_token]
     num_word_embeddings = len(word_field.vocab)
 
-    feat_pad_indices = [ff.vocab.stoi[ff.pad_token] for ff in feat_fields]
-    num_feat_embeddings = [len(ff.vocab) for ff in feat_fields]
+    feat_pad_indices = [ff.vocab.stoi[ff.pad_token]
+                        for ff in feat_fields if ff.use_vocab]
+    num_feat_embeddings = [len(ff.vocab) for ff in feat_fields if ff.use_vocab]
 
     emb = Embeddings(
         word_vec_size=emb_dim,

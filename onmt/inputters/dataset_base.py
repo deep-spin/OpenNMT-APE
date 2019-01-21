@@ -81,13 +81,7 @@ class DatasetBase(Dataset):
                     ex_dict, src_field, tgt_field)
                 self.src_vocabs.append(src_vocab)
             ex_fields = {k: v for k, v in fields.items() if k in ex_dict}
-            ex_fields['segments_ids'] = fields['segments_ids']
             ex = Example.fromdict(ex_dict, ex_fields)
-            src_len = len(' '.join(ex.src).split(' [SEP] ')[0].split())
-            mt_len = len(' '.join(ex.src).split(' [SEP] ')[1].split())
-            ex.segments_ids = [0]*src_len + [1]*mt_len
-            ex.src = ' '.join([' '.join(ex.src).split(' [SEP] ')[0],
-                               ' '.join(ex.src).split(' [SEP] ')[1]]).split()
             examples.append(ex)
 
         # the dataset's self.fields should have the same attributes as examples
