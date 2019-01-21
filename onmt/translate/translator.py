@@ -457,11 +457,13 @@ class Translator(object):
         src_lengths = None
         if data_type == 'text':
             _, src_lengths = batch.src
-            segments_ids = batch.segments_ids
+            kwargs = {}
+            if hasattr(batch, 'segments_ids'):
+                kwargs['segments_ids'] = batch.segments_ids
         elif data_type == 'audio':
             src_lengths = batch.src_lengths
         enc_states, memory_bank, src_lengths = self.model.encoder(
-            src, src_lengths, segments_ids=segments_ids)
+            src, src_lengths, **kwargs)
         if src_lengths is None:
             assert not isinstance(memory_bank, tuple), \
                 'Ensemble decoding only supported for text data'
