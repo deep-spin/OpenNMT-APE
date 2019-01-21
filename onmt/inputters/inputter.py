@@ -227,19 +227,13 @@ def get_fields(
     for i in range(n_tgt_feats + 1):
         name = "tgt_feat_" + str(i - 1) if i > 0 else "tgt"
 
-        bert_tokenizer = None
         if bert_tgt is not None:
-            bert_tokenizer = MyBertTokenizer.from_pretrained(
-                bert_tgt)
+            tokenize = partial(
+                _bert_tokenize,
+                layer=i,
+                truncate=tgt_truncate,
+                bert_model_name=bert_tgt)
 
-        tokenize = partial(
-            _feature_tokenize,
-            layer=i,
-            truncate=tgt_truncate,
-            feat_delim=feat_delim,
-            bert_tokenizer=bert_tokenizer)
-
-        if bert_tgt is not None:
             feat = Field(
                 pad_token='[PAD]',
                 unk_token='[UNK]',
@@ -247,6 +241,12 @@ def get_fields(
                 eos_token='<T>',
                 tokenize=tokenize)
         else:
+            tokenize = partial(
+                _feature_tokenize,
+                layer=i,
+                truncate=tgt_truncate,
+                feat_delim=feat_delim)
+
             feat = Field(
                 init_token=bos,
                 eos_token=eos,
