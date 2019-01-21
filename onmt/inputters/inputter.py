@@ -112,8 +112,7 @@ def _feature_tokenize(
     return tokens
 
 
-def _bert_tokenize(string, layer=0, truncate=None, bert_model_name=None):
-    bert_tokenizer = MyBertTokenizer.from_pretrained(bert_model_name)
+def _bert_tokenize(string, layer=0, truncate=None, bert_tokenizer=None):
     tokens = bert_tokenizer.tokenize(string)
     if '[SEP]' in tokens:
         src_A = ' '.join(tokens).split(' [SEP] ')[0]
@@ -167,11 +166,13 @@ def get_fields(
             name = "src_feat_" + str(i - 1) if i > 0 else "src"
 
             if bert_src is not None:
+                bert_tokenizer = MyBertTokenizer.from_pretrained(
+                    bert_src)
                 tokenize = partial(
                     _bert_tokenize,
                     layer=i,
                     truncate=src_truncate,
-                    bert_model_name=bert_src)
+                    bert_tokenizer=bert_tokenizer)
             else:
                 tokenize = partial(
                     _feature_tokenize,
@@ -199,7 +200,7 @@ def get_fields(
                 _bert_tokenize,
                 layer=i+1,
                 truncate=src_truncate,
-                bert_model_name=bert_src)
+                bert_tokenizer=bert_tokenizer)
 
             segments_ids = Field(
                 use_vocab=False, tokenize=tokenize,
@@ -228,11 +229,13 @@ def get_fields(
         name = "tgt_feat_" + str(i - 1) if i > 0 else "tgt"
 
         if bert_tgt is not None:
+            bert_tokenizer = MyBertTokenizer.from_pretrained(
+                bert_tgt)
             tokenize = partial(
                 _bert_tokenize,
                 layer=i,
                 truncate=tgt_truncate,
-                bert_model_name=bert_tgt)
+                bert_tokenizer=bert_tokenizer)
 
             feat = Field(
                 pad_token='[PAD]',
