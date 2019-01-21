@@ -82,6 +82,8 @@ class DatasetBase(Dataset):
                 self.src_vocabs.append(src_vocab)
             ex_fields = {k: v for k, v in fields.items() if k in ex_dict}
             ex = Example.fromdict(ex_dict, ex_fields)
+            import ipdb
+            ipdb.set_trace()
             examples.append(ex)
 
         # the dataset's self.fields should have the same attributes as examples
