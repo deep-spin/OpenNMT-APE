@@ -39,8 +39,9 @@ def build_embeddings(opt, word_field, feat_fields, for_encoder=True):
     word_padding_idx = word_field.vocab.stoi[word_field.pad_token]
     num_word_embeddings = len(word_field.vocab)
 
-    feat_pad_indices = [ff.vocab.stoi[ff.pad_token] for ff in feat_fields]
-    num_feat_embeddings = [len(ff.vocab) for ff in feat_fields]
+    feat_pad_indices = [ff.vocab.stoi[ff.pad_token]
+                        for ff in feat_fields if ff.use_vocab]
+    num_feat_embeddings = [len(ff.vocab) for ff in feat_fields if ff.use_vocab]
 
     emb = Embeddings(
         word_vec_size=emb_dim,
@@ -191,8 +192,6 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
     # Build encoder.
     if model_opt.model_type == "text":
         src_fields = [f for n, f in fields['src']]
-        if model_opt.encoder_type == 'bert':
-            src_fields = [src_fields[0]]
         src_emb = build_embeddings(model_opt, src_fields[0], src_fields[1:])
         encoder = build_encoder(model_opt, src_emb)
     elif model_opt.model_type == "img":
