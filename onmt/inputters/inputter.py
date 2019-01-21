@@ -487,12 +487,14 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
             gc.collect()
 
     for name, field in fields["tgt"]:
-        _build_field_vocab(field, counters[name])
-        logger.info(" * %s vocab size: %d." % (name, len(field.vocab)))
-    if data_type == 'text':
-        for name, field in fields["src"]:
+        if field.has_vocab:
             _build_field_vocab(field, counters[name])
             logger.info(" * %s vocab size: %d." % (name, len(field.vocab)))
+    if data_type == 'text':
+        for name, field in fields["src"]:
+            if field.has_vocab:
+                _build_field_vocab(field, counters[name])
+                logger.info(" * %s vocab size: %d." % (name, len(field.vocab)))
         if share_vocab:
             # `tgt_vocab_size` is ignored when sharing vocabularies
             logger.info(" * merging src and tgt vocab...")
