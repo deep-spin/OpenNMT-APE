@@ -12,18 +12,13 @@ class BERTEncoder(EncoderBase):
         * memory_bank `[src_len x batch_size x model_dim]`
     """
 
-    def forward(self, src, lengths=None):
+    def forward(self, src, lengths=None, segments_ids=None):
         """ See :obj:`EncoderBase.forward()`"""
-        if isinstance(src, tuple):
-            src, segments_ids = src
-            segments_ids = segments_ids.t()
-        else:
-            segments_ids = None
-
         self._check_args(src, lengths)
 
         # bert receives a tensor of shape [batch_size x src_len]
         src = src[:, :, 0].t()
+        segments_ids = segments_ids.t()
 
         encoded_layers, pooled_output = \
             self.bert(src, token_type_ids=segments_ids,

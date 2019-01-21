@@ -232,7 +232,7 @@ class Trainer(object):
                 if hasattr(batch, 'segments_ids'):
                     segments_ids = batch.segments_ids
                 else:
-                    segments_ids = batch.segments_ids
+                    segments_ids = None
 
                 tgt = inputters.make_features(batch, 'tgt')
 
@@ -277,6 +277,8 @@ class Trainer(object):
 
             if hasattr(batch, 'segments_ids'):
                 src = (src, batch.segments_ids)
+            else:
+                segments_ids = None
 
             tgt_outer = inputters.make_features(batch, 'tgt')
 
@@ -288,7 +290,8 @@ class Trainer(object):
                 if self.grad_accum_count == 1:
                     self.model.zero_grad()
                 outputs, attns = \
-                    self.model(src, tgt, src_lengths)
+                    self.model(src, tgt, src_lengths,
+                               segments_ids=segments_ids)
 
                 # 3. Compute loss in shards for memory efficiency.
                 batch_stats = self.train_loss.sharded_compute_loss(
