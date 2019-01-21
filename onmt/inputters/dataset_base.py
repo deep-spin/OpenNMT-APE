@@ -81,7 +81,6 @@ class DatasetBase(Dataset):
                     ex_dict, src_field, tgt_field)
                 self.src_vocabs.append(src_vocab)
             ex_fields = {k: v for k, v in fields.items() if k in ex_dict}
-            # ex_fields['segments_ids'] = fields['segments_ids']
             ex = Example.fromdict(ex_dict, ex_fields)
             examples.append(ex)
 
