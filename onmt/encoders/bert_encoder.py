@@ -12,10 +12,11 @@ class BERTEncoder(EncoderBase):
         * memory_bank `[src_len x batch_size x model_dim]`
     """
 
-    def forward(self, src, lengths=None, segments_ids=None):
+    def forward(self, src, lengths=None, **kwargs):
         """ See :obj:`EncoderBase.forward()`"""
         self._check_args(src, lengths)
-        import ipdb; ipdb.set_trace()
+        segments_ids = kwargs['segments_ids']
+
         # bert receives a tensor of shape [batch_size x src_len]
         src = src[:, :, 0].t()
         segments_ids = segments_ids.t()
