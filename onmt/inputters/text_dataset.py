@@ -72,7 +72,7 @@ class TextDataset(DatasetBase):
         if isinstance(sequences, str):
             sequences = cls._read_file(sequences)
         for i, seq in enumerate(sequences):
-            yield {side: seq, "indices": i, "segments_ids": None}
+            yield {side: seq, "indices": i}  # , "segments_ids": None}
 
     @property
     def can_copy(self):
