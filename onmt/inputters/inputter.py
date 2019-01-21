@@ -473,8 +473,6 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
             for name, field in chain.from_iterable(fields.values()):
                 has_vocab = (name == 'src' and src_vocab) or \
                     (name == 'tgt' and tgt_vocab)
-                import ipdb
-                ipdb.set_trace()
                 if field.sequential and not has_vocab:
                     val = getattr(ex, name, None)
                     counters[name].update(val)
