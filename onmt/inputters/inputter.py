@@ -103,23 +103,30 @@ def make_audio(data, vocab):
 
 # mix this with partial
 def _feature_tokenize(
-        string, layer=0, tok_delim=None, feat_delim=None, truncate=None,
-        bert_tokenizer=None):
-    if bert_tokenizer is not None:
-        tokens = bert_tokenizer.tokenize(string)
-    else:
-        tokens = string.split(tok_delim)
+        string, layer=0, tok_delim=None, feat_delim=None, truncate=None):
+    tokens = string.split(tok_delim)
     if truncate is not None:
         tokens = tokens[:truncate]
     if feat_delim is not None:
         tokens = [t.split(feat_delim)[layer] for t in tokens]
+    return tokens
+
+
+def _bert_tokenize(string, layer=0, truncate=None, bert_model_name=None):
+    bert_tokenizer = MyBertTokenizer.from_pretrained(bert_model_name)
+    tokens = bert_tokenizer.tokenize(string)
     if '[SEP]' in tokens:
-        src_len = len(' '.join(tokens).split(' [SEP] ')[0].split())
-        mt_len = len(' '.join(tokens).split(' [SEP] ')[1].split())
-        segments_ids = [0]*src_len + [1]*mt_len
-        tokens = ' '.join([' '.join(tokens).split(' [SEP] ')[0],
-                           ' '.join(tokens).split(' [SEP] ')[1]]).split()
-        tokens = (tokens, segments_ids)
+        src_A = ' '.join(tokens).split(' [SEP] ')[0]
+        src_B = ' '.join(tokens).split(' [SEP] ')[1]
+        src_A_len = len(src_A.split())
+        src_B_len = len(src_B.split())
+        segments_ids = [0]*src_A_len + [1]*src_B_len
+        tokens = ' '.join([src_A, src_B]).split()
+    else:
+        segments_ids = [0]*len(tokens)
+
+    if layer == 1:
+        tokens = segments_ids
     return tokens
 
 
@@ -159,17 +166,18 @@ def get_fields(
         for i in range(n_src_feats + 1):
             name = "src_feat_" + str(i - 1) if i > 0 else "src"
 
-            bert_tokenizer = None
             if bert_src is not None:
-                bert_tokenizer = MyBertTokenizer.from_pretrained(
-                    bert_src)
-
-            tokenize = partial(
-                _feature_tokenize,
-                layer=i,
-                truncate=src_truncate,
-                feat_delim=feat_delim,
-                bert_tokenizer=bert_tokenizer)
+                tokenize = partial(
+                    _bert_tokenize,
+                    layer=i,
+                    truncate=src_truncate,
+                    bert_model_name=bert_src)
+            else:
+                tokenize = partial(
+                    _feature_tokenize,
+                    layer=i,
+                    truncate=src_truncate,
+                    feat_delim=feat_delim)
 
             use_len = i == 0
 
@@ -186,8 +194,16 @@ def get_fields(
             fields['src'].append((name, feat))
 
         if bert_src is not None:
+
+            tokenize = partial(
+                _bert_tokenize,
+                layer=i+1,
+                truncate=src_truncate,
+                bert_model_name=bert_src)
+
             segments_ids = Field(
-                use_vocab=False, dtype=torch.long, pad_token=0)
+                use_vocab=False, tokenize=tokenize,
+                dtype=torch.long, pad_token=0)
             fields['src'].append(('segments_ids', segments_ids))
 
     elif src_data_type == 'img':
