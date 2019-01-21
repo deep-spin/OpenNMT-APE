@@ -191,7 +191,8 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
     # Build encoder.
     if model_opt.model_type == "text":
         src_fields = [f for n, f in fields['src']]
-        import ipdb; ipdb.set_trace()
+        if model_opt.encoder_type == 'bert':
+            src_fields = src_fields[0]
         src_emb = build_embeddings(model_opt, src_fields[0], src_fields[1:])
         encoder = build_encoder(model_opt, src_emb)
     elif model_opt.model_type == "img":
