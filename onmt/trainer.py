@@ -276,7 +276,7 @@ class Trainer(object):
                 src_lengths = None
 
             if hasattr(batch, 'segments_ids'):
-                src = (src, batch.segments_ids)
+                segments_ids = batch.segments_ids
             else:
                 segments_ids = None
 
