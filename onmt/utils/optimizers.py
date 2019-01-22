@@ -77,7 +77,7 @@ def build_torch_optimizer(model, opt):
                  betas=betas,
                  eps=1e-8)])
 
-    elif opt.method == 'bertadam':
+    elif opt.optim == 'bertadam':
         decay_params = []
         no_decay_params = []
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
