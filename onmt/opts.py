@@ -61,6 +61,7 @@ def model_opts(parser):
     # Encoder-Decoder Options
     group = parser.add_argument_group('Model- Encoder-Decoder')
     group.add('--model_type', '-model_type', default='text',
+              choices=['text', 'img', 'audio'],
               help="""Type of source model to use. Allows
                        the system to incorporate non-text inputs.
                        Options are [text|img|audio].""")
@@ -462,7 +463,8 @@ def train_opts(parser):
               help="""Decay every decay_steps""")
 
     group.add('--decay_method', '-decay_method', type=str, default="none",
-              choices=['noam', 'none'], help="Use a custom decay rate.")
+              choices=['noam', 'rsqrt', 'none'],
+              help="Use a custom decay rate.")
     group.add('--warmup_steps', '-warmup_steps', type=int, default=4000,
               help="""Number of warmup steps for custom decay.""")
 
@@ -487,8 +489,7 @@ def train_opts(parser):
               help="""Use tensorboardX for visualization during training.
                        Must have the library tensorboardX.""")
     group.add_argument("--tensorboard_log_dir", "-tensorboard_log_dir",
-                       type=str,
-                       default="runs/onmt",
+                       type=str, default="runs/onmt",
                        help="""Log directory for Tensorboard.
                        This is also the name of the run.
                        """)
@@ -562,6 +563,8 @@ def translate_opts(parser):
               default=1., type=float,
               help="""If doing random sampling, divide the logits by
                        this before computing softmax during decoding.""")
+    group.add('--seed', '-seed', type=int, default=829,
+              help="Random seed")
 
     group = parser.add_argument_group('Beam')
     group.add('--fast', '-fast', action="store_true",

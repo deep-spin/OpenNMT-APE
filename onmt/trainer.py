@@ -16,8 +16,7 @@ import onmt.utils
 from onmt.utils.logging import logger
 
 
-def build_trainer(opt, device_id, model, fields,
-                  optim, data_type, model_saver=None):
+def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
     """
     Simplify `Trainer` creation based on user `opt`s*
 
@@ -50,7 +49,7 @@ def build_trainer(opt, device_id, model, fields,
 
     report_manager = onmt.utils.build_report_manager(opt)
     trainer = onmt.Trainer(model, train_loss, valid_loss, optim, trunc_size,
-                           shard_size, data_type, norm_method,
+                           shard_size, norm_method,
                            grad_accum_count, n_gpu, gpu_rank,
                            gpu_verbose_level, report_manager,
                            model_saver=model_saver)
@@ -83,7 +82,7 @@ class Trainer(object):
     """
 
     def __init__(self, model, train_loss, valid_loss, optim,
-                 trunc_size=0, shard_size=32, data_type='text',
+                 trunc_size=0, shard_size=32,
                  norm_method="sents", grad_accum_count=1, n_gpu=1, gpu_rank=1,
                  gpu_verbose_level=0, report_manager=None, model_saver=None):
         # Basic attributes.
@@ -93,7 +92,6 @@ class Trainer(object):
         self.optim = optim
         self.trunc_size = trunc_size
         self.shard_size = shard_size
-        self.data_type = data_type
         self.norm_method = norm_method
         self.grad_accum_count = grad_accum_count
         self.n_gpu = n_gpu
@@ -104,7 +102,7 @@ class Trainer(object):
 
         assert grad_accum_count > 0
         if grad_accum_count > 1:
-            assert(self.trunc_size == 0), \
+            assert self.trunc_size == 0, \
                 """To enable accumulated gradients,
                    you must disable target sequence truncating."""
 
@@ -131,8 +129,8 @@ class Trainer(object):
         """
         logger.info('Start training...')
 
-        step = self.optim._step + 1
-        true_batchs = []
+        step = self.optim.training_step
+        true_batches = []
         accum = 0
         normalization = 0
 
@@ -149,7 +147,7 @@ class Trainer(object):
                         logger.info("GpuRank %d: index: %d accum: %d"
                                     % (self.gpu_rank, i, accum))
 
-                    true_batchs.append(batch)
+                    true_batches.append(batch)
 
                     if self.norm_method == "tokens":
                         num_tokens = batch.tgt[1:].ne(
@@ -164,22 +162,22 @@ class Trainer(object):
                             logger.info("GpuRank %d: reduce_counter: %d \
                                         n_minibatch %d"
                                         % (self.gpu_rank, reduce_counter,
-                                           len(true_batchs)))
+                                           len(true_batches)))
                         if self.n_gpu > 1:
                             normalization = sum(onmt.utils.distributed
                                                 .all_gather_list
                                                 (normalization))
 
                         self._gradient_accumulation(
-                            true_batchs, normalization, total_stats,
+                            true_batches, normalization, total_stats,
                             report_stats)
 
                         report_stats = self._maybe_report_training(
                             step, train_steps,
-                            self.optim.learning_rate,
+                            self.optim.learning_rate(),
                             report_stats)
 
-                        true_batchs = []
+                        true_batches = []
                         accum = 0
                         normalization = 0
                         if (step % valid_steps == 0):
@@ -194,7 +192,7 @@ class Trainer(object):
                             if self.gpu_verbose_level > 0:
                                 logger.info('GpuRank %d: report stat step %d'
                                             % (self.gpu_rank, step))
-                            self._report_step(self.optim.learning_rate,
+                            self._report_step(self.optim.learning_rate(),
                                               step, valid_stats=valid_stats)
 
                         if self.gpu_rank == 0:
@@ -221,19 +219,12 @@ class Trainer(object):
             stats = onmt.utils.Statistics()
 
             for batch in valid_iter:
-                src = inputters.make_features(batch, 'src', self.data_type)
-                if self.data_type == 'text':
-                    _, src_lengths = batch.src
-                elif self.data_type == 'audio':
-                    src_lengths = batch.src_lengths
-                else:
-                    src_lengths = None
+                src, src_lengths = inputters.make_features(batch, 'src')
+                tgt, _ = inputters.make_features(batch, 'tgt')
 
                 kwargs = {}
                 if hasattr(batch, 'segments_ids'):
                     kwargs['segments_ids'] = batch.segments_ids
-
-                tgt = inputters.make_features(batch, 'tgt')
 
                 # F-prop through the model.
                 outputs, attns = self.model(src, tgt, src_lengths, **kwargs)
@@ -250,12 +241,12 @@ class Trainer(object):
 
         return stats
 
-    def _gradient_accumulation(self, true_batchs, normalization, total_stats,
+    def _gradient_accumulation(self, true_batches, normalization, total_stats,
                                report_stats):
         if self.grad_accum_count > 1:
             self.model.zero_grad()
 
-        for batch in true_batchs:
+        for batch in true_batches:
             target_size = batch.tgt.size(0)
             # Truncated BPTT: reminder not compatible with accum > 1
             if self.trunc_size:
@@ -263,22 +254,16 @@ class Trainer(object):
             else:
                 trunc_size = target_size
 
-            # dec_state = None
-            src = inputters.make_features(batch, 'src', self.data_type)
-            if self.data_type == 'text':
-                _, src_lengths = batch.src
-                report_stats.n_src_words += src_lengths.sum().item()
-            elif self.data_type == 'audio':
-                src_lengths = batch.src_lengths
-            else:
-                src_lengths = None
+            src, src_lengths = inputters.make_features(batch, 'src')
+
+            # this method unsqueezes its input
+            tgt_outer, _ = inputters.make_features(batch, 'tgt')
 
             kwargs = {}
             if hasattr(batch, 'segments_ids'):
                 kwargs['segments_ids'] = batch.segments_ids
 
-            tgt_outer = inputters.make_features(batch, 'tgt')
-
+            bptt = False
             for j in range(0, target_size-1, trunc_size):
                 # 1. Create truncated target.
                 tgt = tgt_outer[j: j + trunc_size]
@@ -286,8 +271,9 @@ class Trainer(object):
                 # 2. F-prop all but generator.
                 if self.grad_accum_count == 1:
                     self.model.zero_grad()
-                outputs, attns = \
-                    self.model(src, tgt, src_lengths, **kwargs)
+                outputs, attns = self.model(src, tgt, src_lengths,
+                                            bptt=bptt, **kwargs)
+                bptt = True
 
                 # 3. Compute loss in shards for memory efficiency.
                 batch_stats = self.train_loss.sharded_compute_loss(
