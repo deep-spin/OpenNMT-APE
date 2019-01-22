@@ -18,8 +18,7 @@ class NMTModel(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-
-def forward(self, src, tgt, lengths, bptt=False, **kwargs):
+    def forward(self, src, tgt, lengths, bptt=False, **kwargs):
         """Forward propagate a `src` and `tgt` pair for training.
         Possible initialized with a beginning decoder state.
 
@@ -30,7 +29,7 @@ def forward(self, src, tgt, lengths, bptt=False, **kwargs):
                 of size `[len x batch x features]`. however, may be an
                 image or other generic input depending on encoder.
             tgt (:obj:`LongTensor`):
-                 a target sequence of size `[tgt_len x batch]`.
+                a target sequence of size `[tgt_len x batch]`.
             lengths(:obj:`LongTensor`): the src lengths, pre-padding `[batch]`.
             bptt (:obj:`Boolean`):
                 a flag indicating if truncated bptt is set. If reset then
@@ -39,8 +38,8 @@ def forward(self, src, tgt, lengths, bptt=False, **kwargs):
         Returns:
             (:obj:`FloatTensor`, `dict`, :obj:`onmt.Models.DecoderState`):
 
-                 * decoder output `[tgt_len x batch x hidden]`
-                 * dictionary attention dists of `[tgt_len x batch x src_len]`
+                * decoder output `[tgt_len x batch x hidden]`
+                * dictionary attention dists of `[tgt_len x batch x src_len]`
         """
         tgt = tgt[:-1]  # exclude last target from inputs
 
