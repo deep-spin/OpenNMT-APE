@@ -402,7 +402,7 @@ def build_dataset(fields, data_type, src,
 
 
 def _build_field_vocab(field, counter, **kwargs):
-    if field.tokenize.keywords['bert_tokenizer'] is not None:
+    if 'bert_tokenizer' in field.tokenize.keywords.keys():
         vocab = field.tokenize.keywords['bert_tokenizer'].vocab
         specials = list(vocab.keys())[:106]
         counter = Counter()
