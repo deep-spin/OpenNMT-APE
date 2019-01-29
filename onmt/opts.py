@@ -84,6 +84,10 @@ def model_opts(parser):
                        'bert-base-chinese'],
               help="""Type of BERT model.""")
 
+    group.add('--bert_decoder', '-bert_decoder', type=str, default='none',
+              choices=['none', 'initialize', 'share'],
+              help="""Type of BERT decoder.""")
+
     group.add('--layers', '-layers', type=int, default=-1,
               help='Number of layers in enc/dec.')
     group.add('--enc_layers', '-enc_layers', type=int, default=2,

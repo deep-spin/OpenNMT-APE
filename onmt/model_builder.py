@@ -306,6 +306,47 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
         if model_opt.share_decoder_embeddings:
             generator[0].weight = decoder.embeddings.word_lut.weight
 
+        if (model_opt.bert_decoder != 'none'
+                and model_opt.decoder_type == "transformer"):
+
+            share_weights = model_opt.bert_decoder == 'share'
+
+            for ii in range(len(decoder.transformer_layers)):
+                # QUERY
+                clone_or_share_layer(
+                    decoder.transformer_layers[ii].self_attn.linear_query,
+                    encoder.bert.encoder.layer[ii].attention.self.query,
+                    share=share_weights)
+
+                # KEY
+                clone_or_share_layer(
+                    decoder.transformer_layers[ii].self_attn.linear_keys,
+                    encoder.bert.encoder.layer[ii].attention.self.key,
+                    share=share_weights)
+
+                # VALUE
+                clone_or_share_layer(
+                    decoder.transformer_layers[ii].self_attn.linear_values,
+                    encoder.bert.encoder.layer[ii].attention.self.value,
+                    share=share_weights)
+
+                # MULTIHEAD ATTN FINAL LINEAR LAYER
+                clone_or_share_layer(
+                    decoder.transformer_layers[ii].self_attn.final_linear,
+                    encoder.bert.encoder.layer[ii].attention.output.dense,
+                    share=share_weights)
+
+                # TRANSFORMER FF
+                clone_or_share_layer(
+                    decoder.transformer_layers[ii].feed_forward.w_1,
+                    encoder.bert.encoder.layer[ii].intermediate.dense,
+                    share=share_weights)
+
+                clone_or_share_layer(
+                    decoder.transformer_layers[ii].feed_forward.w_2,
+                    encoder.bert.encoder.layer[ii].output.dense,
+                    share=share_weights)
+
     model.generator = generator
     model.to(device)
 
@@ -317,3 +358,13 @@ def build_model(model_opt, opt, fields, checkpoint):
     model = build_base_model(model_opt, fields, use_gpu(opt), checkpoint)
     logger.info(model)
     return model
+
+
+def clone_or_share_layer(layer1, layer2, share=False):
+
+    if share:
+        layer1.weight, layer1.bias = layer2.weight, layer2.bias
+    else:
+        layer1.weight, layer1.bias = \
+            nn.Parameter(
+                layer2.weight.clone()), nn.Parameter(layer2.bias.clone())
