@@ -37,9 +37,9 @@ class EnsembleEncoder(EncoderBase):
         super(EnsembleEncoder, self).__init__()
         self.model_encoders = nn.ModuleList(model_encoders)
 
-    def forward(self, src, lengths=None):
+    def forward(self, src, lengths=None, **kwargs):
         enc_hidden, memory_bank, _ = zip(*[
-            model_encoder(src, lengths)
+            model_encoder(src, lengths, **kwargs)
             for model_encoder in self.model_encoders])
         return enc_hidden, memory_bank, lengths
 
@@ -130,7 +130,12 @@ def load_test_model(opt, dummy_opt):
             shared_fields = fields
         else:
             for key, field in fields.items():
+                if type(field) is list:
+                    field = field[0][1]
                 if field is not None and 'vocab' in field.__dict__:
+                    shared_field = shared_fields[key]
+                    if type(shared_field) is list:
+                        shared_field = shared_field[0][1]
                     assert field.vocab.stoi == shared_fields[key].vocab.stoi, \
                         'Ensemble models must use the same preprocessed data'
         models.append(model)
