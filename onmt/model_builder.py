@@ -307,7 +307,8 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
             generator[0].weight = decoder.embeddings.word_lut.weight
 
         if (model_opt.bert_decoder != 'none'
-                and model_opt.decoder_type == "transformer"):
+                and model_opt.decoder_type == "transformer"
+                and checkpoint is None):
 
             share_weights = model_opt.bert_decoder == 'share'
 
