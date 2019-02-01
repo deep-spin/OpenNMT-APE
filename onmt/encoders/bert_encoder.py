@@ -21,8 +21,12 @@ class BERTEncoder(EncoderBase):
         src = src[:, :, 0].t()
         segments_ids = segments_ids.t()
 
+        # 0 is padding index in bert models
+        mask = src.ne(0)
+
         encoded_layers, pooled_output = \
             self.bert(src, token_type_ids=segments_ids,
+                      attention_mask=mask,
                       output_all_encoded_layers=False)
 
         return pooled_output.unsqueeze(0),\
