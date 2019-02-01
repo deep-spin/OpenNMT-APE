@@ -164,8 +164,6 @@ class TransformerDecoder(nn.Module):
         # Set up a separated copy attention layer, if needed.
         self._copy = False
         if copy_attn:
-            self.copy_attn = onmt.modules.GlobalAttention(
-                d_model, attn_type=attn_type)
             self._copy = True
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
 
