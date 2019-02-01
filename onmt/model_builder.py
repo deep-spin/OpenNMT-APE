@@ -254,7 +254,10 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
             gen_func
         )
         if model_opt.share_decoder_embeddings:
-            generator[0].weight = decoder.embeddings.word_lut.weight
+            if not model_opt.copy_attn:
+                generator[0].weight = decoder.embeddings.word_lut.weight
+            else:
+                generator.linear.weight = decoder.embeddings.word_lut.weight
     else:
         vocab_size = len(fields["tgt"][0][1].vocab)
         pad_idx = fields["tgt"][0][1].vocab.stoi[fields["tgt"][0][1].pad_token]
@@ -304,7 +307,10 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
             decoder.embeddings.word_lut.weight = \
                 encoder.bert.embeddings.word_embeddings.weight
         if model_opt.share_decoder_embeddings:
-            generator[0].weight = decoder.embeddings.word_lut.weight
+            if not model_opt.copy_attn:
+                generator[0].weight = decoder.embeddings.word_lut.weight
+            else:
+                generator.linear.weight = decoder.embeddings.word_lut.weight
 
         if (model_opt.bert_decoder != 'none'
                 and model_opt.decoder_type == "transformer"
