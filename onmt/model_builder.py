@@ -20,6 +20,7 @@ from onmt.encoders.bert_encoder import BERTEncoder
 from onmt.decoders.decoder import InputFeedRNNDecoder, StdRNNDecoder
 from onmt.decoders.transformer import TransformerDecoder
 from onmt.decoders.cnn_decoder import CNNDecoder
+from onmt.decoders.bert_decoder import BERTDecoder
 
 from onmt.modules import Embeddings, CopyGenerator
 from onmt.utils.misc import use_gpu
@@ -106,7 +107,19 @@ def build_decoder(opt, embeddings):
         opt: the option in current environment.
         embeddings (Embeddings): vocab embeddings for this decoder.
     """
-    if opt.decoder_type == "transformer":
+    if opt.decoder_type == 'bert':
+        decoder = BERTDecoder(
+            opt.dec_layers,
+            opt.dec_rnn_size,
+            opt.heads,
+            opt.transformer_ff,
+            opt.global_attention,
+            opt.copy_attn,
+            opt.self_attn_type,
+            opt.dropout,
+            opt.bert_type
+        )
+    elif opt.decoder_type == "transformer":
         decoder = TransformerDecoder(
             opt.dec_layers,
             opt.dec_rnn_size,
@@ -253,7 +266,9 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
             nn.Linear(model_opt.dec_rnn_size, len(fields["tgt"][0][1].vocab)),
             gen_func
         )
-        if model_opt.share_decoder_embeddings:
+        if (model_opt.share_decoder_embeddings
+                and model_opt.decoder_type != 'bert'):
+
             if not model_opt.copy_attn:
                 generator[0].weight = decoder.embeddings.word_lut.weight
             else:
@@ -303,56 +318,59 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
 
     if model_opt.encoder_type == 'bert':
         model.encoder.initialize_bert(model_opt.bert_type, checkpoint)
+
         if model_opt.share_embeddings:
-            decoder.embeddings.word_lut.weight = \
+            decoder.embeddings.word_embeddings.weight = \
                 encoder.bert.embeddings.word_embeddings.weight
         if model_opt.share_decoder_embeddings:
             if not model_opt.copy_attn:
-                generator[0].weight = decoder.embeddings.word_lut.weight
+                generator[0].weight = \
+                    decoder.embeddings.word_embeddings.weight
             else:
-                generator.linear.weight = decoder.embeddings.word_lut.weight
+                generator.linear.weight = \
+                    decoder.embeddings.word_embeddings.weight
 
-        if (model_opt.bert_decoder != 'none'
-                and model_opt.decoder_type == "transformer"
-                and checkpoint is None):
+        # if (model_opt.bert_decoder != 'none'
+        #         and model_opt.decoder_type == "bert"
+        #         and checkpoint is None):
 
-            share_weights = model_opt.bert_decoder == 'share'
+        #     share_weights = model_opt.bert_decoder == 'share'
 
-            for ii in range(len(decoder.transformer_layers)):
-                # QUERY
-                clone_or_share_layer(
-                    decoder.transformer_layers[ii].self_attn.linear_query,
-                    encoder.bert.encoder.layer[ii].attention.self.query,
-                    share=share_weights)
+        #     for ii in range(len(decoder.transformer_layers)):
+        #         # QUERY
+        #         clone_or_share_layer(
+        #             decoder.transformer_layers[ii].self_attn.linear_query,
+        #             encoder.bert.encoder.layer[ii].attention.self.query,
+        #             share=share_weights)
 
-                # KEY
-                clone_or_share_layer(
-                    decoder.transformer_layers[ii].self_attn.linear_keys,
-                    encoder.bert.encoder.layer[ii].attention.self.key,
-                    share=share_weights)
+        #         # KEY
+        #         clone_or_share_layer(
+        #             decoder.transformer_layers[ii].self_attn.linear_keys,
+        #             encoder.bert.encoder.layer[ii].attention.self.key,
+        #             share=share_weights)
 
-                # VALUE
-                clone_or_share_layer(
-                    decoder.transformer_layers[ii].self_attn.linear_values,
-                    encoder.bert.encoder.layer[ii].attention.self.value,
-                    share=share_weights)
+        #         # VALUE
+        #         clone_or_share_layer(
+        #             decoder.transformer_layers[ii].self_attn.linear_values,
+        #             encoder.bert.encoder.layer[ii].attention.self.value,
+        #             share=share_weights)
 
-                # MULTIHEAD ATTN FINAL LINEAR LAYER
-                clone_or_share_layer(
-                    decoder.transformer_layers[ii].self_attn.final_linear,
-                    encoder.bert.encoder.layer[ii].attention.output.dense,
-                    share=share_weights)
+        #         # MULTIHEAD ATTN FINAL LINEAR LAYER
+        #         clone_or_share_layer(
+        #             decoder.transformer_layers[ii].self_attn.final_linear,
+        #             encoder.bert.encoder.layer[ii].attention.output.dense,
+        #             share=share_weights)
 
-                # TRANSFORMER FF
-                clone_or_share_layer(
-                    decoder.transformer_layers[ii].feed_forward.w_1,
-                    encoder.bert.encoder.layer[ii].intermediate.dense,
-                    share=share_weights)
+        #         # TRANSFORMER FF
+        #         clone_or_share_layer(
+        #             decoder.transformer_layers[ii].feed_forward.w_1,
+        #             encoder.bert.encoder.layer[ii].intermediate.dense,
+        #             share=share_weights)
 
-                clone_or_share_layer(
-                    decoder.transformer_layers[ii].feed_forward.w_2,
-                    encoder.bert.encoder.layer[ii].output.dense,
-                    share=share_weights)
+        #         clone_or_share_layer(
+        #             decoder.transformer_layers[ii].feed_forward.w_2,
+        #             encoder.bert.encoder.layer[ii].output.dense,
+        #             share=share_weights)
 
     model.generator = generator
     model.to(device)
