@@ -68,7 +68,9 @@ def build_encoder(opt, embeddings):
         embeddings (Embeddings): vocab embeddings for this encoder.
     """
     if opt.encoder_type == "bert":
-        encoder = BERTEncoder()
+        encoder = BERTEncoder(
+            embeddings.word_lut.weight.size(0),
+            embeddings.word_padding_idx)
     elif opt.encoder_type == "transformer":
         encoder = TransformerEncoder(
             opt.enc_layers,
@@ -110,14 +112,11 @@ def build_decoder(opt, embeddings):
     if opt.decoder_type == 'bert':
         decoder = BERTDecoder(
             opt.dec_layers,
-            opt.dec_rnn_size,
-            opt.heads,
-            opt.transformer_ff,
-            opt.global_attention,
             opt.copy_attn,
             opt.self_attn_type,
-            opt.dropout,
-            opt.bert_type
+            embeddings.word_lut.weight.size(0),
+            embeddings.word_padding_idx,
+            opt.bert_decoder_init_context
         )
     elif opt.decoder_type == "transformer":
         decoder = TransformerDecoder(
@@ -266,9 +265,7 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
             nn.Linear(model_opt.dec_rnn_size, len(fields["tgt"][0][1].vocab)),
             gen_func
         )
-        if (model_opt.share_decoder_embeddings
-                and model_opt.decoder_type != 'bert'):
-
+        if model_opt.share_decoder_embeddings:
             if not model_opt.copy_attn:
                 generator[0].weight = decoder.embeddings.word_lut.weight
             else:
@@ -291,11 +288,9 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
         checkpoint['model'] = {fix_key(k): v
                                for k, v in checkpoint['model'].items()}
         # end of patch for backward compatibility
-        model_dict = {k: v for k, v in checkpoint['model'].items()
-                      if 'bert' not in k}
-        model.load_state_dict(model_dict, strict=False)
+        model.load_state_dict(checkpoint['model'], strict=False)
         generator.load_state_dict(checkpoint['generator'], strict=False)
-    else:
+    elif model_opt.encoder_type != 'bert' or model_opt.decoder_type != 'bert':
         if model_opt.param_init != 0.0:
             for p in model.parameters():
                 p.data.uniform_(-model_opt.param_init, model_opt.param_init)
@@ -317,61 +312,108 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
             model.decoder.embeddings.load_pretrained_vectors(
                 model_opt.pre_word_vecs_dec, model_opt.fix_word_vecs_dec)
 
-    if model_opt.encoder_type == 'bert':
-        model.encoder.initialize_bert(model_opt.bert_type, checkpoint)
+    if model_opt.bert_type != 'none':
+        if model_opt.encoder_type == 'bert' and checkpoint is None:
+            model.encoder.initialize_bert(model_opt.bert_type)
 
-        if model_opt.share_embeddings:
-            decoder.embeddings.word_embeddings.weight = \
+        if model_opt.decoder_type == 'bert' and checkpoint is None:
+            model.decoder.initialize_bert(model_opt.bert_type)
+
+        # Tie word embedding layer of encoder and decoder BERT
+        if model_opt.encoder_type == 'bert' and model_opt.share_embeddings:
+            decoder.embeddings.word_lut.weight = \
                 encoder.bert.embeddings.word_embeddings.weight
+
+        # Tie decoder word embedding layer with generator weights
         if model_opt.share_decoder_embeddings:
             if not model_opt.copy_attn:
                 generator[0].weight = \
-                    decoder.embeddings.word_embeddings.weight
+                    decoder.embeddings.word_lut.weight
             else:
                 generator.linear.weight = \
-                    decoder.embeddings.word_embeddings.weight
+                    decoder.embeddings.word_lut.weight
 
-        # if (model_opt.bert_decoder != 'none'
-        #         and model_opt.decoder_type == "bert"
-        #         and checkpoint is None):
+    if model_opt.encoder_type == 'bert' and model_opt.decoder_type == 'bert':
+        # Tie word, position and token_type embedding
+        # layers of encoder and decoder BERT
+        if model_opt.share_embeddings:
+            decoder.embeddings.position_embeddings.weight = \
+                encoder.bert.embeddings.position_embeddings.weight
+            decoder.embeddings.token_type_embeddings.weight = \
+                encoder.bert.embeddings.token_type_embeddings.weight
 
-        #     share_weights = model_opt.bert_decoder == 'share'
+        # Tie self-attention between encoder and decoder
+        if model_opt.share_self_attn:
+            for encoder_layer, decoder_layer in zip(
+                    encoder.bert.encoder.layer,
+                    decoder.transformer_layers):
+                # QUERY
+                clone_or_share_layer(
+                    decoder_layer.self_attn.linear_query,
+                    encoder_layer.attention.self.query,
+                    share=True)
 
-        #     for ii in range(len(decoder.transformer_layers)):
-        #         # QUERY
-        #         clone_or_share_layer(
-        #             decoder.transformer_layers[ii].self_attn.linear_query,
-        #             encoder.bert.encoder.layer[ii].attention.self.query,
-        #             share=share_weights)
+                # KEY
+                clone_or_share_layer(
+                    decoder_layer.self_attn.linear_keys,
+                    encoder_layer.attention.self.key,
+                    share=True)
 
-        #         # KEY
-        #         clone_or_share_layer(
-        #             decoder.transformer_layers[ii].self_attn.linear_keys,
-        #             encoder.bert.encoder.layer[ii].attention.self.key,
-        #             share=share_weights)
+                # VALUE
+                clone_or_share_layer(
+                    decoder_layer.self_attn.linear_values,
+                    encoder_layer.attention.self.value,
+                    share=True)
 
-        #         # VALUE
-        #         clone_or_share_layer(
-        #             decoder.transformer_layers[ii].self_attn.linear_values,
-        #             encoder.bert.encoder.layer[ii].attention.self.value,
-        #             share=share_weights)
+                # MULTIHEAD ATTN FINAL LINEAR LAYER
+                clone_or_share_layer(
+                    decoder_layer.self_attn.final_linear,
+                    encoder_layer.attention.output.dense,
+                    share=True)
 
-        #         # MULTIHEAD ATTN FINAL LINEAR LAYER
-        #         clone_or_share_layer(
-        #             decoder.transformer_layers[ii].self_attn.final_linear,
-        #             encoder.bert.encoder.layer[ii].attention.output.dense,
-        #             share=share_weights)
+        # Tie context-attention with self-attention
+        if model_opt.tie_context_attn:
+            for decoder_layer in decoder.transformer_layers:
+                # QUERY
+                clone_or_share_layer(
+                    decoder_layer.context_attn.linear_query,
+                    decoder_layer.self_attn.linear_query,
+                    share=True)
 
-        #         # TRANSFORMER FF
-        #         clone_or_share_layer(
-        #             decoder.transformer_layers[ii].feed_forward.w_1,
-        #             encoder.bert.encoder.layer[ii].intermediate.dense,
-        #             share=share_weights)
+                # KEY
+                clone_or_share_layer(
+                    decoder_layer.context_attn.linear_keys,
+                    decoder_layer.self_attn.linear_keys,
+                    share=True)
 
-        #         clone_or_share_layer(
-        #             decoder.transformer_layers[ii].feed_forward.w_2,
-        #             encoder.bert.encoder.layer[ii].output.dense,
-        #             share=share_weights)
+                # VALUE
+                clone_or_share_layer(
+                    decoder_layer.context_attn.linear_values,
+                    decoder_layer.self_attn.linear_values,
+                    share=True)
+
+                # MULTIHEAD ATTN FINAL LINEAR LAYER
+                clone_or_share_layer(
+                    decoder_layer.context_attn.final_linear,
+                    decoder_layer.self_attn.final_linear,
+                    share=True)
+
+        # Tie positionwise feedforward between encoder and decoder
+        if model_opt.share_feed_forward:
+            for encoder_layer, decoder_layer in zip(
+                    encoder.bert.encoder.layer,
+                    decoder.transformer_layers):
+
+                # TRANSFORMER FF
+                clone_or_share_layer(
+                    decoder_layer.intermediate.dense,
+                    encoder_layer.intermediate.dense,
+                    share=True)
+
+                clone_or_share_layer(
+                    decoder_layer.output.dense,
+                    encoder_layer.output.dense,
+                    share=True)
 
     model.generator = generator
     model.to(device)

@@ -77,16 +77,25 @@ def model_opts(parser):
                        are experimental. Options are
                        [rnn|transformer|cnn].""")
 
-    group.add('--bert_type', '-bert_type', type=str, default='bert-base-cased',
-              choices=['bert-base-cased', 'bert-base-uncased',
+    group.add('--bert_type', '-bert_type', type=str, default='none',
+              choices=['none', 'bert-base-cased', 'bert-base-uncased',
                        'bert-large-cased', 'bert-large-uncased',
                        'bert-base-multilingual-cased',
                        'bert-base-chinese'],
               help="""Type of BERT model.""")
 
-    group.add('--bert_decoder', '-bert_decoder', type=str, default='none',
-              choices=['none', 'initialize', 'share'],
-              help="""Type of BERT decoder.""")
+    group.add('--bert_decoder_init_context', '-bert_decoder_init_context',
+              action="store_true",
+              help='Initialize context attn with self attention weights.')
+    group.add('--share_self_attn', '-share_self_attn',
+              action="store_true",
+              help='Share encoder and decoder self attention weights.')
+    group.add('--tie_context_attn', '-tie_context_attn',
+              action="store_true",
+              help='Tie decoder self and context attention weights.')
+    group.add('--share_feed_forward', '-share_feed_forward',
+              action="store_true",
+              help='Share enc. and dec. positionwise feedforward weights.')
 
     group.add('--layers', '-layers', type=int, default=-1,
               help='Number of layers in enc/dec.')

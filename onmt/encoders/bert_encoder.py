@@ -1,4 +1,5 @@
 from pytorch_pretrained_bert import BertModel
+from pytorch_pretrained_bert.modeling import BertConfig
 
 from onmt.encoders.encoder import EncoderBase
 
@@ -12,6 +13,12 @@ class BERTEncoder(EncoderBase):
         * memory_bank `[src_len x batch_size x model_dim]`
     """
 
+    def __init__(self, vocab_size, pad_idx):
+        super(BERTEncoder, self).__init__()
+        self.config = BertConfig(vocab_size)
+        self.bert = BertModel(self.config)
+        self.pad_idx = pad_idx
+
     def forward(self, src, lengths=None, **kwargs):
         """ See :obj:`EncoderBase.forward()`"""
         self._check_args(src, lengths)
@@ -22,7 +29,7 @@ class BERTEncoder(EncoderBase):
         segments_ids = segments_ids.t()
 
         # 0 is padding index in bert models
-        mask = src.ne(0)
+        mask = src.ne(self.pad_idx)
 
         encoded_layers, pooled_output = \
             self.bert(src, token_type_ids=segments_ids,
@@ -32,22 +39,5 @@ class BERTEncoder(EncoderBase):
         return pooled_output.unsqueeze(0),\
             encoded_layers.transpose(0, 1), lengths
 
-    def initialize_bert(self, bert_type, checkpoint=None):
-
-        def _remove_prefix(component_name):
-            '''
-            remove the first part of the name of a component of the state dict.
-            In this case, we're removing "encoder." from the component name so
-            Bert can be loaded by the .from_pretrained() method.
-            '''
-
-            return '.'.join(component_name.split('.')[1:])
-
-        if checkpoint:
-            bert_state_dict = {
-                _remove_prefix(k): v for k, v in checkpoint['model'].items()
-                if 'bert' in k}
-        else:
-            bert_state_dict = None
-        self.bert = BertModel.from_pretrained(bert_type,
-                                              bert_state_dict)
+    def initialize_bert(self, bert_type):
+        self.bert = BertModel.from_pretrained(bert_type)

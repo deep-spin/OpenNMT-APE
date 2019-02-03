@@ -1,4 +1,5 @@
 from pytorch_pretrained_bert import BertModel
+from pytorch_pretrained_bert.modeling import BertConfig
 from .transformer import TransformerDecoder
 import torch.nn as nn
 import torch
@@ -13,7 +14,7 @@ class MyBertEmbeddings(nn.Module):
     """
     def __init__(self, bert_embeddings):
         super(MyBertEmbeddings, self).__init__()
-        self.word_embeddings = bert_embeddings.word_embeddings
+        self.word_lut = bert_embeddings.word_embeddings
         self.position_embeddings = bert_embeddings.position_embeddings
         self.token_type_embeddings = bert_embeddings.token_type_embeddings
 
@@ -32,7 +33,7 @@ class MyBertEmbeddings(nn.Module):
         if step is not None:
             position_ids.fill_(step)
 
-        words_embeddings = self.word_embeddings(input_ids)
+        words_embeddings = self.word_lut(input_ids)
         position_embeddings = self.position_embeddings(position_ids)
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
 
@@ -55,7 +56,7 @@ class BERTDecoderLayer(nn.Module):
       self_attn_type (string): type of self-attention scaled-dot, average
     """
 
-    def __init__(self, bert_layer):
+    def __init__(self, bert_layer, init_context=False):
         super(BERTDecoderLayer, self).__init__()
         num_heads = \
             bert_layer.attention.self.num_attention_heads
@@ -63,8 +64,10 @@ class BERTDecoderLayer(nn.Module):
         hidden_size = \
             bert_layer.attention.self.query.weight.size(0)
 
+        self.init_context = init_context
         self.dropout = bert_layer.attention.self.dropout.p
 
+        # Create self-attention layer
         self.self_attn = onmt.modules.MultiHeadedAttention(
                 num_heads, hidden_size, dropout=self.dropout)
         self.self_attn_drop = \
@@ -72,11 +75,13 @@ class BERTDecoderLayer(nn.Module):
         self.self_attn_norm = \
             bert_layer.attention.output.LayerNorm
 
+        # Initilaize self-attention layers with bert weights
         self.self_attn.linear_keys = bert_layer.attention.self.key
         self.self_attn.linear_values = bert_layer.attention.self.value
         self.self_attn.linear_query = bert_layer.attention.self.query
         self.self_attn.final_linear = bert_layer.attention.output.dense
 
+        # Create context-attention layer
         self.context_attn = onmt.modules.MultiHeadedAttention(
                 num_heads, hidden_size, dropout=self.dropout)
         self.context_attn_drop = \
@@ -84,8 +89,15 @@ class BERTDecoderLayer(nn.Module):
         self.context_attn_norm = \
             bert_layer.attention.output.LayerNorm
 
+        if init_context:
+            # Initilaize context-attention layers with bert weights
+            self.context_attn.linear_keys = bert_layer.attention.self.key
+            self.context_attn.linear_values = bert_layer.attention.self.value
+            self.context_attn.linear_query = bert_layer.attention.self.query
+            self.context_attn.final_linear = bert_layer.attention.output.dense
+
         self.intermediate = bert_layer.intermediate
-        self.ff_output = bert_layer.output
+        self.output = bert_layer.output
 
         mask = self._get_attn_subsequent_mask(MAX_SIZE)
         # Register self.mask as a buffer in BERTDecoderLayer, so
@@ -129,7 +141,7 @@ class BERTDecoderLayer(nn.Module):
         mid_norm = self.context_attn_norm(
             self.context_attn_drop(mid) + query_norm)
         intermediate_output = self.intermediate(mid_norm)
-        output = self.ff_output(intermediate_output, mid_norm)
+        output = self.output(intermediate_output, mid_norm)
 
         return output, attn
 
@@ -154,14 +166,15 @@ class BERTDecoderLayer(nn.Module):
 class BERTDecoder(TransformerDecoder):
     """
     """
-    def __init__(self, num_layers, d_model, heads, d_ff, attn_type,
-                 copy_attn, self_attn_type, dropout, bert_type):
+    def __init__(self, num_layers, copy_attn,
+                 self_attn_type, vocab_size, pad_idx, init_context=False):
         super(TransformerDecoder, self).__init__()
 
         # Basic attributes.
         self.decoder_type = 'bert'
         self.num_layers = num_layers
         self.self_attn_type = self_attn_type
+        self.pad_idx = pad_idx
 
         # Decoder State
         self.state = {}
@@ -170,12 +183,13 @@ class BERTDecoder(TransformerDecoder):
         if copy_attn:
             self._copy = True
 
-        bert = BertModel.from_pretrained(bert_type)
+        self.config = BertConfig(vocab_size)
+        bert = BertModel(self.config)
 
         self.embeddings = MyBertEmbeddings(bert.embeddings)
 
         self.transformer_layers = nn.ModuleList(
-            [BERTDecoderLayer(bert_layer)
+            [BERTDecoderLayer(bert_layer, init_context)
              for bert_layer in bert.encoder.layer])
 
     def forward(self, tgt, memory_bank, memory_lengths=None, step=None):
@@ -203,9 +217,10 @@ class BERTDecoder(TransformerDecoder):
 
         src_memory_bank = memory_bank.transpose(0, 1).contiguous()
 
-        pad_idx = 0
-        src_pad_mask = src_words.data.eq(pad_idx).unsqueeze(1)  # [B, 1, T_src]
-        tgt_pad_mask = tgt_words.data.eq(pad_idx).unsqueeze(1)  # [B, 1, T_tgt]
+        # [B, 1, T_src]
+        src_pad_mask = src_words.data.eq(self.pad_idx).unsqueeze(1)
+        # [B, 1, T_tgt]
+        tgt_pad_mask = tgt_words.data.eq(self.pad_idx).unsqueeze(1)
 
         output = emb
         for i in range(self.num_layers):
@@ -228,3 +243,19 @@ class BERTDecoder(TransformerDecoder):
             attns["copy"] = attn
 
         return dec_outs, attns
+
+    def initialize_bert(self, bert_type):
+
+        bert = BertModel.from_pretrained(bert_type)
+
+        self.embeddings = MyBertEmbeddings(bert.embeddings)
+
+        init_context = self.transformer_layers[0].init_context
+
+        self.transformer_layers = nn.ModuleList(
+            [BERTDecoderLayer(bert_layer, init_context)
+             for bert_layer in bert.encoder.layer])
+
+        if not init_context:
+            for transformer_layer in self.transformer_layers:
+                transformer_layer.context_attn.apply(bert.init_bert_weights)
