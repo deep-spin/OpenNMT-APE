@@ -136,7 +136,7 @@ def load_test_model(opt, dummy_opt):
                     shared_field = shared_fields[key]
                     if type(shared_field) is list:
                         shared_field = shared_field[0][1]
-                    assert field.vocab.stoi == shared_fields[key].vocab.stoi, \
+                    assert field.vocab.stoi == shared_field.vocab.stoi, \
                         'Ensemble models must use the same preprocessed data'
         models.append(model)
         if shared_model_opt is None:
