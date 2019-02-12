@@ -83,6 +83,18 @@ def model_opts(parser):
                        'bert-base-multilingual-cased',
                        'bert-base-chinese'],
               help="""Type of BERT model.""")
+    group.add('--enc_bert_type', '-enc_bert_type', type=str, default='none',
+              choices=['none', 'bert-base-cased', 'bert-base-uncased',
+                       'bert-large-cased', 'bert-large-uncased',
+                       'bert-base-multilingual-cased',
+                       'bert-base-chinese'],
+              help="""Type of BERT model for encoder.""")
+    group.add('--dec_bert_type', '-dec_bert_type', type=str, default='none',
+              choices=['none', 'bert-base-cased', 'bert-base-uncased',
+                       'bert-large-cased', 'bert-large-uncased',
+                       'bert-base-multilingual-cased',
+                       'bert-base-chinese'],
+              help="""Type of BERT model for decoder.""")
 
     group.add('--bert_decoder_init_context', '-bert_decoder_init_context',
               action="store_true",

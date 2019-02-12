@@ -312,14 +312,18 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
             model.decoder.embeddings.load_pretrained_vectors(
                 model_opt.pre_word_vecs_dec, model_opt.fix_word_vecs_dec)
 
-    if model_opt.bert_type != 'none':
-        if model_opt.encoder_type == 'bert' and checkpoint is None:
-            model.encoder.initialize_bert(model_opt.bert_type)
+    if model_opt.encoder_type == 'bert' or model_opt.decoder_type == 'bert':
+        if model_opt.bert_type != 'none':
+            model_opt.enc_bert_type = model_opt.bert_type
+            model_opt.dec_bert_type = model_opt.bert_type
 
-        if model_opt.decoder_type == 'bert' and checkpoint is None:
-            model.decoder.initialize_bert(model_opt.bert_type)
+        if model_opt.enc_bert_type != 'none' and checkpoint is None:
+                model.encoder.initialize_bert(model_opt.enc_bert_type)
 
-        # Tie word embedding layer of encoder and decoder BERT
+        if model_opt.dec_bert_type != 'none' and checkpoint is None:
+                model.decoder.initialize_bert(model_opt.dec_bert_type)
+
+        # Tie word embedding layer of encoder BERT and decoder
         if model_opt.encoder_type == 'bert' and model_opt.share_embeddings:
             decoder.embeddings.word_lut.weight = \
                 encoder.bert.embeddings.word_embeddings.weight
