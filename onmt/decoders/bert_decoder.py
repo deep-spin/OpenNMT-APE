@@ -12,7 +12,7 @@ MAX_SIZE = 512
 class MyBertEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings.
     """
-    def __init__(self, bert_embeddings):
+    def __init__(self, bert_embeddings, token_type='A'):
         super(MyBertEmbeddings, self).__init__()
         self.word_lut = bert_embeddings.word_embeddings
         self.position_embeddings = bert_embeddings.position_embeddings
@@ -21,6 +21,8 @@ class MyBertEmbeddings(nn.Module):
         self.LayerNorm = bert_embeddings.LayerNorm
         self.dropout = bert_embeddings.dropout
 
+        self.token_type = token_type
+
     def forward(self, input_ids, token_type_ids=None, step=None):
         seq_length = input_ids.size(1)
         position_ids = torch.arange(
@@ -28,8 +30,12 @@ class MyBertEmbeddings(nn.Module):
             dtype=torch.long,
             device=input_ids.device)
         position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
+
         if token_type_ids is None:
-            token_type_ids = torch.zeros_like(input_ids)
+            if self.token_type is 'A':
+                token_type_ids = torch.zeros_like(input_ids)
+            else:  # 'B'
+                token_type_ids = torch.ones_like(input_ids)
         if step is not None:
             position_ids.fill_(step)
 
@@ -167,7 +173,8 @@ class BERTDecoder(TransformerDecoder):
     """
     """
     def __init__(self, num_layers, copy_attn,
-                 self_attn_type, vocab_size, pad_idx, init_context=False):
+                 self_attn_type, vocab_size, pad_idx, init_context=False,
+                 token_type='A'):
         super(TransformerDecoder, self).__init__()
 
         # Basic attributes.
@@ -175,6 +182,7 @@ class BERTDecoder(TransformerDecoder):
         self.num_layers = num_layers
         self.self_attn_type = self_attn_type
         self.pad_idx = pad_idx
+        self.token_type = token_type
 
         # Decoder State
         self.state = {}
@@ -186,7 +194,7 @@ class BERTDecoder(TransformerDecoder):
         self.config = BertConfig(vocab_size)
         bert = BertModel(self.config)
 
-        self.embeddings = MyBertEmbeddings(bert.embeddings)
+        self.embeddings = MyBertEmbeddings(bert.embeddings, token_type)
 
         self.transformer_layers = nn.ModuleList(
             [BERTDecoderLayer(bert_layer, init_context)
@@ -248,7 +256,7 @@ class BERTDecoder(TransformerDecoder):
 
         bert = BertModel.from_pretrained(bert_type)
 
-        self.embeddings = MyBertEmbeddings(bert.embeddings)
+        self.embeddings = MyBertEmbeddings(bert.embeddings, self.token_type)
 
         init_context = self.transformer_layers[0].init_context
 

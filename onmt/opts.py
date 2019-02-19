@@ -109,6 +109,12 @@ def model_opts(parser):
               action="store_true",
               help='Share enc. and dec. positionwise feedforward weights.')
 
+    group.add('--bert_decoder_token_type', '-bert_decoder_token_type',
+              type=str, default='A',
+              choices=['A', 'B'],
+              help="""Token type to use in segment
+                      embeddings in the BERT decoder.""")
+
     group.add('--layers', '-layers', type=int, default=-1,
               help='Number of layers in enc/dec.')
     group.add('--enc_layers', '-enc_layers', type=int, default=2,

@@ -116,7 +116,8 @@ def build_decoder(opt, embeddings):
             opt.self_attn_type,
             embeddings.word_lut.weight.size(0),
             embeddings.word_padding_idx,
-            opt.bert_decoder_init_context
+            opt.bert_decoder_init_context,
+            opt.bert_decoder_token_type
         )
     elif opt.decoder_type == "transformer":
         decoder = TransformerDecoder(
