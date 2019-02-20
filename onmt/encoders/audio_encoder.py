@@ -1,4 +1,4 @@
-""" Audio encoder """
+"""Audio encoder"""
 import math
 
 import torch.nn as nn
@@ -7,22 +7,26 @@ from torch.nn.utils.rnn import pack_padded_sequence as pack
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 
 from onmt.utils.rnn_factory import rnn_factory
+from onmt.encoders.encoder import EncoderBase
 
 
-class AudioEncoder(nn.Module):
-    """
-    A simple encoder convolutional -> recurrent neural network for
-    audio input.
+class AudioEncoder(EncoderBase):
+    """A simple encoder CNN -> RNN for audio input.
 
     Args:
-        num_layers (int): number of encoder layers.
-        bidirectional (bool): bidirectional encoder.
-        rnn_size (int): size of hidden states of the rnn.
+        rnn_type (str): Type of RNN (e.g. GRU, LSTM, etc).
+        enc_layers (int): Number of encoder layers.
+        dec_layers (int): Number of decoder layers.
+        brnn (bool): Bidirectional encoder.
+        enc_rnn_size (int): Size of hidden states of the rnn.
+        dec_rnn_size (int): Size of the decoder hidden states.
+        enc_pooling (str): A comma separated list either of length 1
+            or of length ``enc_layers`` specifying the pooling amount.
         dropout (float): dropout probablity.
         sample_rate (float): input spec
         window_size (int): input spec
-
     """
+
     def __init__(self, rnn_type, enc_layers, dec_layers, brnn,
                  enc_rnn_size, dec_rnn_size, enc_pooling, dropout,
                  sample_rate, window_size):
@@ -75,9 +79,25 @@ class AudioEncoder(nn.Module):
                     nn.MaxPool1d(enc_pooling[l + 1]))
             setattr(self, 'batchnorm_%d' % (l + 1), batchnorm)
 
-    def forward(self, src, lengths=None, **kwargs):
-        "See :obj:`onmt.encoders.encoder.EncoderBase.forward()`"
+    @classmethod
+    def from_opt(cls, opt, embeddings=None):
+        """Alternate constructor."""
+        if embeddings is not None:
+            raise ValueError("Cannot use embeddings with AudioEncoder.")
+        return cls(
+            opt.rnn_type,
+            opt.enc_layers,
+            opt.dec_layers,
+            opt.brnn,
+            opt.enc_rnn_size,
+            opt.dec_rnn_size,
+            opt.audio_enc_pooling,
+            opt.dropout,
+            opt.sample_rate,
+            opt.window_size)
 
+    def forward(self, src, lengths=None, **kwargs):
+        """See :func:`onmt.encoders.encoder.EncoderBase.forward()`"""
         batch_size, _, nfft, t = src.size()
         src = src.transpose(0, 1).transpose(0, 3).contiguous() \
                  .view(t, batch_size, nfft)
@@ -95,7 +115,7 @@ class AudioEncoder(nn.Module):
             t, _, _ = memory_bank.size()
             memory_bank = memory_bank.transpose(0, 2)
             memory_bank = pool(memory_bank)
-            lengths = [int(math.floor((length - stride)/stride + 1))
+            lengths = [int(math.floor((length - stride) / stride + 1))
                        for length in lengths]
             memory_bank = memory_bank.transpose(0, 2)
             src = memory_bank

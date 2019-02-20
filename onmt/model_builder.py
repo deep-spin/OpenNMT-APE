@@ -9,40 +9,35 @@ from torch.nn.init import xavier_uniform_
 
 import onmt.inputters as inputters
 import onmt.modules
-from onmt.encoders.rnn_encoder import RNNEncoder
-from onmt.encoders.transformer import TransformerEncoder
-from onmt.encoders.cnn_encoder import CNNEncoder
-from onmt.encoders.mean_encoder import MeanEncoder
-from onmt.encoders.audio_encoder import AudioEncoder
-from onmt.encoders.image_encoder import ImageEncoder
-from onmt.encoders.bert_encoder import BERTEncoder
 
-from onmt.decoders.decoder import InputFeedRNNDecoder, StdRNNDecoder
-from onmt.decoders.transformer import TransformerDecoder
-from onmt.decoders.cnn_decoder import CNNDecoder
-from onmt.decoders.bert_decoder import BERTDecoder
+from onmt.encoders import str2enc
+
+from onmt.decoders import str2dec
 
 from onmt.modules import Embeddings, CopyGenerator
+from onmt.modules.util_class import Cast
 from onmt.utils.misc import use_gpu
 from onmt.utils.logging import logger
+from onmt.utils.parse import ArgumentParser
 
 
-def build_embeddings(opt, word_field, feat_fields, for_encoder=True):
+def build_embeddings(opt, text_field, for_encoder=True):
     """
     Args:
         opt: the option in current environment.
-        word_dict(Vocab): words dictionary.
-        feature_dicts([Vocab], optional): a list of feature dictionary.
+        text_field(TextMultiField): word and feats field.
         for_encoder(bool): build Embeddings for encoder or decoder?
     """
     emb_dim = opt.src_word_vec_size if for_encoder else opt.tgt_word_vec_size
 
-    word_padding_idx = word_field.vocab.stoi[word_field.pad_token]
-    num_word_embeddings = len(word_field.vocab)
+    pad_indices = [f.vocab.stoi[f.pad_token] for _, f in text_field]
+    word_padding_idx, feat_pad_indices = pad_indices[0], pad_indices[1:]
 
-    feat_pad_indices = [ff.vocab.stoi[ff.pad_token]
-                        for ff in feat_fields if ff.use_vocab]
-    num_feat_embeddings = [len(ff.vocab) for ff in feat_fields if ff.use_vocab]
+    num_embs = [len(f.vocab) for _, f in text_field]
+    num_word_embeddings, num_feat_embeddings = num_embs[0], num_embs[1:]
+
+    fix_word_vecs = opt.fix_word_vecs_enc if for_encoder \
+        else opt.fix_word_vecs_dec
 
     emb = Embeddings(
         word_vec_size=emb_dim,
@@ -55,7 +50,8 @@ def build_embeddings(opt, word_field, feat_fields, for_encoder=True):
         feat_padding_idx=feat_pad_indices,
         word_vocab_size=num_word_embeddings,
         feat_vocab_sizes=num_feat_embeddings,
-        sparse=opt.optim == "sparseadam"
+        sparse=opt.optim == "sparseadam",
+        fix_word_vecs=fix_word_vecs
     )
     return emb
 
@@ -67,39 +63,8 @@ def build_encoder(opt, embeddings):
         opt: the option in current environment.
         embeddings (Embeddings): vocab embeddings for this encoder.
     """
-    if opt.encoder_type == "bert":
-        encoder = BERTEncoder(
-            embeddings.word_lut.weight.size(0),
-            embeddings.word_padding_idx)
-    elif opt.encoder_type == "transformer":
-        encoder = TransformerEncoder(
-            opt.enc_layers,
-            opt.enc_rnn_size,
-            opt.heads,
-            opt.transformer_ff,
-            opt.dropout,
-            embeddings
-        )
-    elif opt.encoder_type == "cnn":
-        encoder = CNNEncoder(
-            opt.enc_layers,
-            opt.enc_rnn_size,
-            opt.cnn_kernel_width,
-            opt.dropout,
-            embeddings)
-    elif opt.encoder_type == "mean":
-        encoder = MeanEncoder(opt.enc_layers, embeddings)
-    else:
-        encoder = RNNEncoder(
-            opt.rnn_type,
-            opt.brnn,
-            opt.enc_layers,
-            opt.enc_rnn_size,
-            opt.dropout,
-            embeddings,
-            opt.bridge
-        )
-    return encoder
+    enc_type = opt.encoder_type if opt.model_type == "text" else opt.model_type
+    return str2enc[enc_type].from_opt(opt, embeddings)
 
 
 def build_decoder(opt, embeddings):
@@ -109,64 +74,20 @@ def build_decoder(opt, embeddings):
         opt: the option in current environment.
         embeddings (Embeddings): vocab embeddings for this decoder.
     """
-    if opt.decoder_type == 'bert':
-        decoder = BERTDecoder(
-            opt.dec_layers,
-            opt.copy_attn,
-            opt.self_attn_type,
-            embeddings.word_lut.weight.size(0),
-            embeddings.word_padding_idx,
-            opt.bert_decoder_init_context,
-            opt.bert_decoder_token_type
-        )
-    elif opt.decoder_type == "transformer":
-        decoder = TransformerDecoder(
-            opt.dec_layers,
-            opt.dec_rnn_size,
-            opt.heads,
-            opt.transformer_ff,
-            opt.global_attention,
-            opt.copy_attn,
-            opt.self_attn_type,
-            opt.dropout,
-            embeddings
-        )
-    elif opt.decoder_type == "cnn":
-        decoder = CNNDecoder(
-            opt.dec_layers,
-            opt.dec_rnn_size,
-            opt.global_attention,
-            opt.copy_attn,
-            opt.cnn_kernel_width,
-            opt.dropout,
-            embeddings
-        )
-    else:
-        dec_class = InputFeedRNNDecoder if opt.input_feed else StdRNNDecoder
-        decoder = dec_class(
-            opt.rnn_type,
-            opt.brnn,
-            opt.dec_layers,
-            opt.dec_rnn_size,
-            opt.global_attention,
-            opt.global_attention_function,
-            opt.coverage_attn,
-            opt.context_gate,
-            opt.copy_attn,
-            opt.dropout,
-            embeddings,
-            opt.reuse_copy_attn
-        )
-    return decoder
+    dec_type = "ifrnn" if opt.decoder_type == "rnn" and opt.input_feed \
+               else opt.decoder_type
+    return str2dec[dec_type].from_opt(opt, embeddings)
 
 
-def load_test_model(opt, dummy_opt, model_path=None):
+def load_test_model(opt, model_path=None):
     if model_path is None:
         model_path = opt.models[0]
     checkpoint = torch.load(model_path,
                             map_location=lambda storage, loc: storage)
 
-    model_opt = checkpoint['opt']
+    model_opt = ArgumentParser.ckpt_model_opts(checkpoint['opt'])
+    ArgumentParser.update_model_opts(model_opt)
+    ArgumentParser.validate_model_opts(model_opt)
     vocab = checkpoint['vocab']
     if inputters.old_style_vocab(vocab):
         fields = inputters.load_old_vocab(
@@ -175,77 +96,51 @@ def load_test_model(opt, dummy_opt, model_path=None):
     else:
         fields = vocab
 
-    for arg in dummy_opt:
-        if arg not in model_opt:
-            model_opt.__dict__[arg] = dummy_opt[arg]
-    model = build_base_model(model_opt, fields, use_gpu(opt), checkpoint)
+    model = build_base_model(model_opt, fields, use_gpu(opt), checkpoint,
+                             opt.gpu)
+    if opt.fp32:
+        model.float()
     model.eval()
     model.generator.eval()
     return fields, model, model_opt
 
 
-def build_base_model(model_opt, fields, gpu, checkpoint=None):
-    """
+def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
+    """Build a model from opts.
+
     Args:
-        model_opt: the option loaded from checkpoint.
-        fields: `Field` objects for the model.
-        gpu(bool): whether to use gpu.
+        model_opt: the option loaded from checkpoint. It's important that
+            the opts have been updated and validated. See
+            :class:`onmt.utils.parse.ArgumentParser`.
+        fields (dict[str, torchtext.data.Field]):
+            `Field` objects for the model.
+        gpu (bool): whether to use gpu.
         checkpoint: the model gnerated by train phase, or a resumed snapshot
                     model from a stopped training.
+        gpu_id (int or NoneType): Which GPU to use.
+
     Returns:
         the NMTModel.
     """
-    assert model_opt.model_type in ["text", "img", "audio"], \
-        "Unsupported model type %s" % model_opt.model_type
 
-    # for backward compatibility
-    if model_opt.rnn_size != -1:
-        model_opt.enc_rnn_size = model_opt.rnn_size
-        model_opt.dec_rnn_size = model_opt.rnn_size
+    # Build embeddings.
+    if model_opt.model_type == "text":
+        src_field = fields["src"]
+        src_emb = build_embeddings(model_opt, src_field)
+    else:
+        src_emb = None
 
     # Build encoder.
-    if model_opt.model_type == "text":
-        src_fields = [f for n, f in fields['src']]
-        src_emb = build_embeddings(model_opt, src_fields[0], src_fields[1:])
-        encoder = build_encoder(model_opt, src_emb)
-    elif model_opt.model_type == "img":
-        # why is build_encoder not used here?
-        # why is the model_opt.__dict__ check necessary?
-        if "image_channel_size" not in model_opt.__dict__:
-            image_channel_size = 3
-        else:
-            image_channel_size = model_opt.image_channel_size
-
-        encoder = ImageEncoder(
-            model_opt.enc_layers,
-            model_opt.brnn,
-            model_opt.enc_rnn_size,
-            model_opt.dropout,
-            image_channel_size
-        )
-    elif model_opt.model_type == "audio":
-        encoder = AudioEncoder(
-            model_opt.rnn_type,
-            model_opt.enc_layers,
-            model_opt.dec_layers,
-            model_opt.brnn,
-            model_opt.enc_rnn_size,
-            model_opt.dec_rnn_size,
-            model_opt.audio_enc_pooling,
-            model_opt.dropout,
-            model_opt.sample_rate,
-            model_opt.window_size
-        )
+    encoder = build_encoder(model_opt, src_emb)
 
     # Build decoder.
-    tgt_fields = [f for n, f in fields['tgt']]
-    tgt_emb = build_embeddings(
-        model_opt, tgt_fields[0], tgt_fields[1:], for_encoder=False)
+    tgt_field = fields["tgt"]
+    tgt_emb = build_embeddings(model_opt, tgt_field, for_encoder=False)
 
     # Share the embedding matrix - preprocess with share_vocab required.
     if model_opt.share_embeddings and model_opt.encoder_type != 'bert':
         # src/tgt vocab should be the same if `-share_vocab` is specified.
-        assert src_fields[0].vocab == tgt_fields[0].vocab, \
+        assert src_field.base_field.vocab == tgt_field.base_field.vocab, \
             "preprocess with -share_vocab if you use share_embeddings"
 
         tgt_emb.word_lut.weight = src_emb.word_lut.weight
@@ -253,7 +148,12 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
     decoder = build_decoder(model_opt, tgt_emb)
 
     # Build NMTModel(= encoder + decoder).
-    device = torch.device("cuda" if gpu else "cpu")
+    if gpu and gpu_id is not None:
+        device = torch.device("cuda", gpu_id)
+    elif gpu and not gpu_id:
+        device = torch.device("cuda")
+    elif not gpu:
+        device = torch.device("cpu")
     model = onmt.models.NMTModel(encoder, decoder)
 
     # Build Generator.
@@ -263,7 +163,9 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
         else:
             gen_func = nn.LogSoftmax(dim=-1)
         generator = nn.Sequential(
-            nn.Linear(model_opt.dec_rnn_size, len(fields["tgt"][0][1].vocab)),
+            nn.Linear(model_opt.dec_rnn_size,
+                      len(fields["tgt"].base_field.vocab)),
+            Cast(torch.float32),
             gen_func
         )
         if model_opt.share_decoder_embeddings:
@@ -272,8 +174,9 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
             else:
                 generator.linear.weight = decoder.embeddings.word_lut.weight
     else:
-        vocab_size = len(fields["tgt"][0][1].vocab)
-        pad_idx = fields["tgt"][0][1].vocab.stoi[fields["tgt"][0][1].pad_token]
+        tgt_base_field = fields["tgt"].base_field
+        vocab_size = len(tgt_base_field.vocab)
+        pad_idx = tgt_base_field.vocab.stoi[tgt_base_field.pad_token]
         generator = CopyGenerator(model_opt.dec_rnn_size, vocab_size, pad_idx)
 
     # Load the model states from checkpoint or initialize them.
@@ -307,11 +210,11 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
 
         if hasattr(model.encoder, 'embeddings'):
             model.encoder.embeddings.load_pretrained_vectors(
-                model_opt.pre_word_vecs_enc, model_opt.fix_word_vecs_enc)
+                model_opt.pre_word_vecs_enc)
         if (hasattr(model.decoder, 'embeddings')
                 and not model_opt.decoder_type == 'bert'):
             model.decoder.embeddings.load_pretrained_vectors(
-                model_opt.pre_word_vecs_dec, model_opt.fix_word_vecs_dec)
+                model_opt.pre_word_vecs_dec)
 
     if model_opt.encoder_type == 'bert' or model_opt.decoder_type == 'bert':
         if model_opt.bert_type != 'none':
@@ -422,6 +325,8 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
 
     model.generator = generator
     model.to(device)
+    if model_opt.model_dtype == 'fp16':
+        model.half()
 
     return model
 

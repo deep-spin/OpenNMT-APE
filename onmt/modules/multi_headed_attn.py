@@ -3,13 +3,13 @@ import math
 import torch
 import torch.nn as nn
 
+from onmt.utils.misc import generate_relative_positions_matrix,\
+                            relative_matmul
 # from onmt.utils.misc import aeq
 
 
 class MultiHeadedAttention(nn.Module):
-    """
-    Multi-Head Attention module from
-    "Attention is All You Need"
+    """Multi-Head Attention module from "Attention is All You Need"
     :cite:`DBLP:journals/corr/VaswaniSPUJGKP17`.
 
     Similar to standard `dot` attention but uses
@@ -48,7 +48,8 @@ class MultiHeadedAttention(nn.Module):
        dropout (float): dropout parameter
     """
 
-    def __init__(self, head_count, model_dim, dropout=0.1):
+    def __init__(self, head_count, model_dim, dropout=0.1,
+                 max_relative_positions=0):
         assert model_dim % head_count == 0
         self.dim_per_head = model_dim // head_count
         self.model_dim = model_dim
@@ -66,25 +67,32 @@ class MultiHeadedAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.final_linear = nn.Linear(model_dim, model_dim)
 
+        self.max_relative_positions = max_relative_positions
+
+        if max_relative_positions > 0:
+            vocab_size = max_relative_positions * 2 + 1
+            self.relative_positions_embeddings = nn.Embedding(
+                vocab_size, self.dim_per_head)
+
     def forward(self, key, value, query, mask=None,
                 layer_cache=None, type=None):
         """
         Compute the context vector and the attention vectors.
 
         Args:
-           key (`FloatTensor`): set of `key_len`
-                key vectors `[batch, key_len, dim]`
-           value (`FloatTensor`): set of `key_len`
-                value vectors `[batch, key_len, dim]`
-           query (`FloatTensor`): set of `query_len`
-                 query vectors  `[batch, query_len, dim]`
+           key (FloatTensor): set of `key_len`
+               key vectors ``(batch, key_len, dim)``
+           value (FloatTensor): set of `key_len`
+               value vectors ``(batch, key_len, dim)``
+           query (FloatTensor): set of `query_len`
+               query vectors  ``(batch, query_len, dim)``
            mask: binary mask indicating which keys have
-                 non-zero attention `[batch, query_len, key_len]`
+               non-zero attention ``(batch, query_len, key_len)``
         Returns:
-           (`FloatTensor`, `FloatTensor`) :
+           (FloatTensor, FloatTensor):
 
-           * output context vectors `[batch, query_len, dim]`
-           * one of the attention vectors `[batch, query_len, key_len]`
+           * output context vectors ``(batch, query_len, dim)``
+           * one of the attention vectors ``(batch, query_len, key_len)``
         """
 
         # CHECKS
@@ -109,14 +117,15 @@ class MultiHeadedAttention(nn.Module):
         head_count = self.head_count
         key_len = key.size(1)
         query_len = query.size(1)
+        device = key.device
 
         def shape(x):
-            """  projection """
+            """Projection."""
             return x.view(batch_size, -1, head_count, dim_per_head) \
                 .transpose(1, 2)
 
         def unshape(x):
-            """  compute context """
+            """Compute context."""
             return x.transpose(1, 2).contiguous() \
                     .view(batch_size, -1, head_count * dim_per_head)
 
@@ -128,7 +137,6 @@ class MultiHeadedAttention(nn.Module):
                                     self.linear_values(query)
                 key = shape(key)
                 value = shape(value)
-                device = key.device
                 if layer_cache["self_keys"] is not None:
                     key = torch.cat(
                         (layer_cache["self_keys"].to(device), key),
@@ -158,6 +166,19 @@ class MultiHeadedAttention(nn.Module):
             key = shape(key)
             value = shape(value)
 
+        if self.max_relative_positions > 0 and type == "self":
+            key_len = key.size(2)
+            # 1 or key_len x key_len
+            relative_positions_matrix = generate_relative_positions_matrix(
+                key_len, self.max_relative_positions,
+                cache=True if layer_cache is not None else False)
+            #  1 or key_len x key_len x dim_per_head
+            relations_keys = self.relative_positions_embeddings(
+                relative_positions_matrix.to(device))
+            #  1 or key_len x key_len x dim_per_head
+            relations_values = self.relative_positions_embeddings(
+                relative_positions_matrix.to(device))
+
         query = shape(query)
 
         key_len = key.size(2)
@@ -165,16 +186,32 @@ class MultiHeadedAttention(nn.Module):
 
         # 2) Calculate and scale scores.
         query = query / math.sqrt(dim_per_head)
-        scores = torch.matmul(query, key.transpose(2, 3))
+        # batch x num_heads x query_len x key_len
+        query_key = torch.matmul(query, key.transpose(2, 3))
+
+        if self.max_relative_positions > 0 and type == "self":
+            scores = query_key + relative_matmul(query, relations_keys, True)
+        else:
+            scores = query_key
+        scores = scores.float()
 
         if mask is not None:
             mask = mask.unsqueeze(1)  # [B, 1, 1, T_values]
             scores = scores.masked_fill(mask, -1e18)
 
         # 3) Apply attention dropout and compute context vectors.
-        attn = self.softmax(scores)
+        attn = self.softmax(scores).to(query.dtype)
         drop_attn = self.dropout(attn)
-        context = unshape(torch.matmul(drop_attn, value))
+
+        context_original = torch.matmul(drop_attn, value)
+
+        if self.max_relative_positions > 0 and type == "self":
+            context = unshape(context_original
+                              + relative_matmul(drop_attn,
+                                                relations_values,
+                                                False))
+        else:
+            context = unshape(context_original)
 
         output = self.final_linear(context)
         # CHECK

@@ -1,4 +1,4 @@
-# Example: Summarization
+# Summarization
 
 Note: The process and results below are presented in our paper `Bottom-Up Abstractive Summarization`. Please consider citing it if you follow these instructions. 
 
@@ -37,9 +37,9 @@ For CNN-DM we follow See et al. [2] and additionally truncate the source length 
 
 ```
 python preprocess.py -train_src data/cnndm/train.txt.src \
-                     -train_tgt data/cnndm/train.txt.tgt \
+                     -train_tgt data/cnndm/train.txt.tgt.tagged \
                      -valid_src data/cnndm/val.txt.src \
-                     -valid_tgt data/cnndm/val.txt.tgt \
+                     -valid_tgt data/cnndm/val.txt.tgt.tagged \
                      -save_data data/cnndm/CNNDM \
                      -src_seq_length 10000 \
                      -tgt_seq_length 10000 \
@@ -139,7 +139,6 @@ python -u train.py -data data/cnndm/CNNDM \
                    -normalization tokens \
                    -max_generator_batches 2 \
                    -train_steps 200000 \
-                   -start_checkpoint_at 8 \
                    -accum_count 4 \
                    -share_embeddings \
                    -copy_attn \
@@ -208,7 +207,7 @@ The installation instructions can be found [here](https://github.com/falcondai/p
 It can be run with the following command:
 
 ```
-python baseline.py -s testout/cnndm.out -t data/cnndm/test.txt.tgt -m sent_tag_verbatim -r
+python baseline.py -s testout/cnndm.out -t data/cnndm/test.txt.tgt.tagged -m sent_tag_verbatim -r
 ```
 
 The `sent_tag_verbatim` option strips `<t>` and `</t>` tags around sentences - when a sentence previously was `<t> w w w w . </t>`, it becomes `w w w w .`.
