@@ -94,11 +94,12 @@ def build_torch_optimizer(model, opt):
         ]
         # warmup = Proportion of training to perform
         # linear learning rate warmup for.
+        warmup = opt.warmup_steps/opt.train_steps
         optimizer = BertAdam(grouped_parameters,
                              lr=opt.learning_rate,
                              b1=opt.adam_beta1,
                              b2=opt.adam_beta2,
-                             warmup=opt.bert_warmup,
+                             warmup=warmup,
                              t_total=opt.train_steps)
     else:
         raise ValueError('Invalid optimizer type: ' + opt.optim)
