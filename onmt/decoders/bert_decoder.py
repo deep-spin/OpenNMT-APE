@@ -187,9 +187,7 @@ class BERTDecoder(TransformerDecoder):
         # Decoder State
         self.state = {}
 
-        self._copy = False
-        if copy_attn:
-            self._copy = True
+        self._copy = copy_attn
 
         self.config = BertConfig(vocab_size)
         bert = BertModel(self.config)
@@ -200,12 +198,24 @@ class BERTDecoder(TransformerDecoder):
             [BERTDecoderLayer(bert_layer, init_context)
              for bert_layer in bert.encoder.layer])
 
+    @classmethod
+    def from_opt(cls, opt, embeddings):
+        """Alternate constructor."""
+        return cls(
+            opt.dec_layers,
+            opt.copy_attn,
+            opt.self_attn_type,
+            embeddings.word_lut.weight.size(0),
+            embeddings.word_padding_idx,
+            opt.bert_decoder_init_context,
+            opt.bert_decoder_token_type)
+
     def forward(self, tgt, memory_bank, memory_lengths=None, step=None):
         """
         See :obj:`onmt.modules.RNNDecoderBase.forward()`
         """
         if step == 0:
-            self._init_cache(memory_bank, self.num_layers, self.self_attn_type)
+            self._init_cache(memory_bank)
 
         src = self.state["src"]
         src_words = src[:, :, 0].transpose(0, 1)

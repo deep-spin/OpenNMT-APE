@@ -19,14 +19,21 @@ class BERTEncoder(EncoderBase):
         self.bert = BertModel(self.config)
         self.pad_idx = pad_idx
 
+    @classmethod
+    def from_opt(cls, opt, embeddings):
+        """Alternate constructor."""
+        return cls(
+            embeddings.word_lut.weight.size(0),
+            embeddings.word_padding_idx
+        )
+
     def forward(self, src, lengths=None, **kwargs):
         """ See :obj:`EncoderBase.forward()`"""
         self._check_args(src, lengths)
-        segments_ids = kwargs['segments_ids']
 
         # bert receives a tensor of shape [batch_size x src_len]
+        segments_ids = src[:, :, 1].t()
         src = src[:, :, 0].t()
-        segments_ids = segments_ids.t()
 
         # 0 is padding index in bert models
         mask = src.ne(self.pad_idx)

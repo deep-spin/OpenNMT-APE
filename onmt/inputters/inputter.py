@@ -126,7 +126,7 @@ def get_fields(
                         "base_name": "tgt"}
     if bert_tgt is not None:
         tgt_field_kwargs = {"n_feats": n_tgt_feats,
-                            "include_lengths": True,
+                            "include_lengths": False,
                             "pad": '[PAD]', "bos": '<S>', "eos": '<T>',
                             "truncate": tgt_truncate,
                             "bert": bert_tgt,
@@ -331,12 +331,13 @@ def _load_vocab(vocab_path, name, counters):
 def _build_fv_from_multifield(multifield, counters, build_fv_args,
                               size_multiple=1):
     for name, field in multifield:
-        _build_field_vocab(
-            field,
-            counters[name],
-            size_multiple=size_multiple,
-            **build_fv_args[name])
-        logger.info(" * %s vocab size: %d." % (name, len(field.vocab)))
+        if field.use_vocab:
+            _build_field_vocab(
+                field,
+                counters[name],
+                size_multiple=size_multiple,
+                **build_fv_args[name])
+            logger.info(" * %s vocab size: %d." % (name, len(field.vocab)))
 
 
 def build_vocab(train_dataset_files, fields, data_type, share_vocab,

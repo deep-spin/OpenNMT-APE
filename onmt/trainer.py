@@ -311,6 +311,7 @@ class Trainer(object):
 
             tgt_outer = batch.tgt
 
+            # TODO: remove all kwargs
             kwargs = {}
             if hasattr(batch, 'segments_ids'):
                 kwargs['segments_ids'] = batch.segments_ids

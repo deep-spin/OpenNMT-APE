@@ -174,6 +174,9 @@ class TextMultiField(RawField):
 
         feats = [ff.process(batch_by_feat[i], device=device)
                  for i, (_, ff) in enumerate(self.fields[1:], 1)]
+        # TODO: refactor
+        if self.fields[0][0] == 'tgt' and self.fields[1][0] == 'segments_ids':
+            feats = []
         levels = [base_data] + feats
         # data: seq_len x batch_size x len(self.fields)
         data = torch.stack(levels, 2)
@@ -240,7 +243,7 @@ def text_fields(**kwargs):
             unk_token='[UNK]',
             init_token=bos, eos_token=eos,
             tokenize=tokenize,
-            include_lengths=True)
+            include_lengths=include_lengths)
         fields_.append((base_name, feat))
 
         tokenize = partial(
@@ -251,7 +254,7 @@ def text_fields(**kwargs):
 
         segments_ids = Field(
             use_vocab=False, tokenize=tokenize,
-            dtype=torch.long, pad_token=0)
+            dtype=torch.long, pad_token=0, unk_token=None)
         fields_.append(('segments_ids', segments_ids))
     else:
         for i in range(n_feats + 1):
