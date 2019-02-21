@@ -270,12 +270,8 @@ class Trainer(object):
                                    else (batch.src, None)
                 tgt = batch.tgt
 
-                kwargs = {}
-                if hasattr(batch, 'segments_ids'):
-                    kwargs['segments_ids'] = batch.segments_ids
-
                 # F-prop through the model.
-                outputs, attns = valid_model(src, tgt, src_lengths, **kwargs)
+                outputs, attns = valid_model(src, tgt, src_lengths)
 
                 # Compute loss.
                 _, batch_stats = self.valid_loss(batch, outputs, attns)
@@ -311,11 +307,6 @@ class Trainer(object):
 
             tgt_outer = batch.tgt
 
-            # TODO: remove all kwargs
-            kwargs = {}
-            if hasattr(batch, 'segments_ids'):
-                kwargs['segments_ids'] = batch.segments_ids
-
             bptt = False
             for j in range(0, target_size-1, trunc_size):
                 # 1. Create truncated target.
@@ -325,7 +316,7 @@ class Trainer(object):
                 if self.grad_accum_count == 1:
                     self.optim.zero_grad()
                 outputs, attns = self.model(
-                    src, tgt, src_lengths, bptt=bptt, **kwargs)
+                    src, tgt, src_lengths, bptt=bptt)
                 bptt = True
 
                 # 3. Compute loss.

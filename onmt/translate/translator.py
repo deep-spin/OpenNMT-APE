@@ -506,12 +506,9 @@ class Translator(object):
     def _run_encoder(self, batch):
         src, src_lengths = batch.src if isinstance(batch.src, tuple) \
                            else (batch.src, None)
-        kwargs = {}
-        if hasattr(batch, 'segments_ids'):
-            kwargs['segments_ids'] = batch.segments_ids
 
-        enc_states, memory_bank, src_lengths = self.model.encoder(
-            src, src_lengths, **kwargs)
+        enc_states, memory_bank, src_lengths = \
+            self.model.encoder(src, src_lengths)
         if src_lengths is None:
             assert not isinstance(memory_bank, tuple), \
                 'Ensemble decoding only supported for text data'
