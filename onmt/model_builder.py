@@ -231,7 +231,7 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
         # Tie word embedding layer of encoder BERT and decoder
         if model_opt.encoder_type == 'bert' and model_opt.share_embeddings:
             decoder.embeddings.word_lut.weight = \
-                encoder.bert.embeddings.word_embeddings.weight
+                encoder.embeddings.word_lut.weight
 
         # Tie decoder word embedding layer with generator weights
         if model_opt.share_decoder_embeddings:
@@ -247,14 +247,14 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
         # layers of encoder and decoder BERT
         if model_opt.share_embeddings:
             decoder.embeddings.position_embeddings.weight = \
-                encoder.bert.embeddings.position_embeddings.weight
+                encoder.embeddings.position_embeddings.weight
             decoder.embeddings.token_type_embeddings.weight = \
-                encoder.bert.embeddings.token_type_embeddings.weight
+                encoder.embeddings.token_type_embeddings.weight
 
         # Tie self-attention between encoder and decoder
         if model_opt.share_self_attn:
             for encoder_layer, decoder_layer in zip(
-                    encoder.bert.encoder.layer,
+                    encoder.encoder.layer,
                     decoder.transformer_layers):
                 # QUERY
                 clone_or_share_layer(
@@ -310,7 +310,7 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
         # Tie positionwise feedforward between encoder and decoder
         if model_opt.share_feed_forward:
             for encoder_layer, decoder_layer in zip(
-                    encoder.bert.encoder.layer,
+                    encoder.encoder.layer,
                     decoder.transformer_layers):
 
                 # TRANSFORMER FF

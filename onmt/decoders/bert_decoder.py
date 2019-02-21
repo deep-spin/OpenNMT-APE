@@ -223,16 +223,11 @@ class BERTDecoder(TransformerDecoder):
         src_batch, src_len = src_words.size()
         tgt_batch, tgt_len = tgt_words.size()
 
-        # Initialize return variables.
-        dec_outs = []
-        attns = {"std": []}
-        if self._copy:
-            attns["copy"] = []
-
         # Run the forward pass of the TransformerDecoder.
         emb = self.embeddings(tgt_words, step=step)
         assert emb.dim() == 3  # len x batch x embedding_dim
 
+        output = emb
         src_memory_bank = memory_bank.transpose(0, 1).contiguous()
 
         # [B, 1, T_src]
@@ -240,23 +235,22 @@ class BERTDecoder(TransformerDecoder):
         # [B, 1, T_tgt]
         tgt_pad_mask = tgt_words.data.eq(self.pad_idx).unsqueeze(1)
 
-        output = emb
-        for i in range(self.num_layers):
-            output, attn = self.transformer_layers[i](
+        for i, layer in enumerate(self.transformer_layers):
+            layer_cache = self.state["cache"]["layer_{}".format(i)] \
+                if step is not None else None
+            output, attn = layer(
                 output,
                 src_memory_bank,
                 src_pad_mask,
                 tgt_pad_mask,
-                layer_cache=(
-                    self.state["cache"]["layer_{}".format(i)]
-                    if step is not None else None),
+                layer_cache=layer_cache,
                 step=step)
 
         # Process the result and update the attentions.
         dec_outs = output.transpose(0, 1).contiguous()
         attn = attn.transpose(0, 1).contiguous()
 
-        attns["std"] = attn
+        attns = {"std": attn}
         if self._copy:
             attns["copy"] = attn
 
