@@ -209,7 +209,8 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
                 if p.dim() > 1:
                     xavier_uniform_(p)
 
-        if hasattr(model.encoder, 'embeddings'):
+        if (hasattr(model.encoder, 'embeddings')
+                and not model_opt.encoder_type == 'bert'):
             model.encoder.embeddings.load_pretrained_vectors(
                 model_opt.pre_word_vecs_enc)
         if (hasattr(model.decoder, 'embeddings')
