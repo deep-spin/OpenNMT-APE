@@ -9,6 +9,16 @@ import onmt
 MAX_SIZE = 512
 
 
+def clone_or_share_layer(layer1, layer2, share=False):
+
+    if share:
+        layer1.weight, layer1.bias = layer2.weight, layer2.bias
+    else:
+        layer1.weight, layer1.bias = \
+            nn.Parameter(
+                layer2.weight.clone()), nn.Parameter(layer2.bias.clone())
+
+
 class MyBertEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings.
     """
@@ -97,10 +107,26 @@ class BERTDecoderLayer(nn.Module):
 
         if init_context:
             # Initilaize context-attention layers with bert weights
-            self.context_attn.linear_keys = bert_layer.attention.self.key
-            self.context_attn.linear_values = bert_layer.attention.self.value
-            self.context_attn.linear_query = bert_layer.attention.self.query
-            self.context_attn.final_linear = bert_layer.attention.output.dense
+            clone_or_share_layer(
+                self.context_attn.linear_keys,
+                bert_layer.attention.self.key,
+                share=False
+            )
+            clone_or_share_layer(
+                self.context_attn.linear_values,
+                bert_layer.attention.self.value,
+                share=False
+            )
+            clone_or_share_layer(
+                self.context_attn.linear_query,
+                bert_layer.attention.self.query,
+                share=False
+            )
+            clone_or_share_layer(
+                self.context_attn.final_linear,
+                bert_layer.attention.output.dense,
+                share=False
+            )
 
         self.intermediate = bert_layer.intermediate
         self.output = bert_layer.output
@@ -172,15 +198,12 @@ class BERTDecoderLayer(nn.Module):
 class BERTDecoder(TransformerDecoder):
     """
     """
-    def __init__(self, num_layers, copy_attn,
-                 self_attn_type, vocab_size, pad_idx, init_context=False,
-                 token_type='A'):
+    def __init__(self, copy_attn, vocab_size, pad_idx,
+                 init_context=False, token_type='A'):
         super(TransformerDecoder, self).__init__()
 
         # Basic attributes.
         self.decoder_type = 'bert'
-        self.num_layers = num_layers
-        self.self_attn_type = self_attn_type
         self.pad_idx = pad_idx
         self.token_type = token_type
 
@@ -202,9 +225,7 @@ class BERTDecoder(TransformerDecoder):
     def from_opt(cls, opt, embeddings):
         """Alternate constructor."""
         return cls(
-            opt.dec_layers,
             opt.copy_attn,
-            opt.self_attn_type,
             embeddings.word_lut.weight.size(0),
             embeddings.word_padding_idx,
             opt.bert_decoder_init_context,
