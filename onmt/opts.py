@@ -104,6 +104,11 @@ def model_opts(parser):
           choices=['concat', 'AB', 'BA'],
           help="""Type of context attention in decoder.""")
 
+    group.add('--transformer_decoder_double_residual',
+              '-transformer_decoder_double_residual',
+              action="store_true",
+              help='when double context att, what to do with res connections.')
+
     group.add('--bert_decoder_init_context', '-bert_decoder_init_context',
               action="store_true",
               help='Initialize context attn with self attention weights.')

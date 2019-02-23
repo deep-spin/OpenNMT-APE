@@ -74,7 +74,7 @@ class BERTDecoderLayer(nn.Module):
     """
 
     def __init__(self, bert_layer, init_context=False,
-                 context_att_type='concat'):
+                 context_att_type='concat', double_residual=False):
         super(BERTDecoderLayer, self).__init__()
         num_heads = \
             bert_layer.attention.self.num_attention_heads
@@ -84,6 +84,7 @@ class BERTDecoderLayer(nn.Module):
 
         self.init_context = init_context
         self.context_att_type = context_att_type
+        self.double_residual = double_residual
         self.dropout = bert_layer.attention.self.dropout.p
 
         # Create self-attention layer
@@ -229,8 +230,10 @@ class BERTDecoderLayer(nn.Module):
                 layer_cache=layer_cache,
                 type="context")
 
+            residual_connection = query_norm if self.double_residual \
+                else mid_norm
             mid_norm = self.context_attn_2_norm(
-                self.context_attn_2_drop(mid) + mid_norm)
+                self.context_attn_2_drop(mid) + residual_connection)
 
         intermediate_output = self.intermediate(mid_norm)
         output = self.output(intermediate_output, mid_norm)
@@ -260,14 +263,16 @@ class BERTDecoder(TransformerDecoder):
     """
     def __init__(self, copy_attn, vocab_size, pad_idx,
                  init_context=False, context_att_type='concat',
-                 token_type='A'):
+                 double_residual=False, token_type='A'):
         super(TransformerDecoder, self).__init__()
 
         # Basic attributes.
         self.decoder_type = 'bert'
         self.pad_idx = pad_idx
         self.token_type = token_type
+        self.init_context = init_context
         self.context_att_type = context_att_type
+        self.double_residual = double_residual
 
         # Decoder State
         self.state = {}
@@ -280,7 +285,8 @@ class BERTDecoder(TransformerDecoder):
         self.embeddings = MyBertEmbeddings(bert.embeddings, token_type)
 
         self.transformer_layers = nn.ModuleList(
-            [BERTDecoderLayer(bert_layer, init_context, self.context_att_type)
+            [BERTDecoderLayer(bert_layer, init_context,
+                              context_att_type, double_residual)
              for bert_layer in bert.encoder.layer])
 
     @classmethod
@@ -292,6 +298,7 @@ class BERTDecoder(TransformerDecoder):
             embeddings.word_padding_idx,
             opt.bert_decoder_init_context,
             opt.bert_decoder_context_att_type,
+            opt.transformer_decoder_double_residual,
             opt.bert_decoder_token_type)
 
     def forward(self, tgt, memory_bank, memory_lengths=None, step=None):
@@ -361,13 +368,12 @@ class BERTDecoder(TransformerDecoder):
 
         self.embeddings = MyBertEmbeddings(bert.embeddings, self.token_type)
 
-        init_context = self.transformer_layers[0].init_context
-
         self.transformer_layers = nn.ModuleList(
-            [BERTDecoderLayer(bert_layer, init_context)
+            [BERTDecoderLayer(bert_layer, self.init_context,
+                              self.context_att_type, self.double_residual)
              for bert_layer in bert.encoder.layer])
 
-        if not init_context:
+        if not self.init_context:
             for transformer_layer in self.transformer_layers:
                 transformer_layer.context_attn.apply(bert.init_bert_weights)
 
