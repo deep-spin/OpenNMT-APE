@@ -73,8 +73,7 @@ class BERTDecoderLayer(nn.Module):
       self_attn_type (string): type of self-attention scaled-dot, average
     """
 
-    def __init__(self, bert_layer, init_context=False,
-                 context_att_type='concat', double_residual=False):
+    def __init__(self, bert_layer, init_context=False):
         super(BERTDecoderLayer, self).__init__()
         num_heads = \
             bert_layer.attention.self.num_attention_heads
@@ -83,8 +82,6 @@ class BERTDecoderLayer(nn.Module):
             bert_layer.attention.self.query.weight.size(0)
 
         self.init_context = init_context
-        self.context_att_type = context_att_type
-        self.double_residual = double_residual
         self.dropout = bert_layer.attention.self.dropout.p
 
         # Create self-attention layer
@@ -93,7 +90,7 @@ class BERTDecoderLayer(nn.Module):
         self.self_attn_drop = \
             bert_layer.attention.output.dropout
         self.self_attn_norm = \
-            bert_layer.attention.output.LayerNorm
+            copy.deepcopy(bert_layer.attention.output.LayerNorm)
 
         # Initilaize self-attention layers with bert weights
         self.self_attn.linear_keys = bert_layer.attention.self.key
@@ -107,7 +104,7 @@ class BERTDecoderLayer(nn.Module):
         self.context_attn_drop = \
             bert_layer.attention.output.dropout
         self.context_attn_norm = \
-            bert_layer.attention.output.LayerNorm
+            copy.deepcopy(bert_layer.attention.output.LayerNorm)
 
         if init_context:
             # Initilaize context-attention layers with bert weights
@@ -132,40 +129,6 @@ class BERTDecoderLayer(nn.Module):
                 share=False
             )
 
-        if self.context_att_type != 'concat':
-            # Create context-attention layer 2
-            self.context_attn_2 = onmt.modules.MultiHeadedAttention(
-                    num_heads, hidden_size, dropout=self.dropout)
-            self.context_attn_2_drop = \
-                bert_layer.attention.output.dropout
-            self.context_attn_2_norm = \
-                bert_layer.attention.output.LayerNorm
-
-            if init_context:
-                # Initilaize context-attention layers with bert weights
-                clone_or_share_layer(
-                    self.context_attn_2.linear_keys,
-                    bert_layer.attention.self.key,
-                    share=False
-                )
-                clone_or_share_layer(
-                    self.context_attn_2.linear_values,
-                    bert_layer.attention.self.value,
-                    share=False
-                )
-                clone_or_share_layer(
-                    self.context_attn_2.linear_query,
-                    bert_layer.attention.self.query,
-                    share=False
-                )
-                clone_or_share_layer(
-                    self.context_attn_2.final_linear,
-                    bert_layer.attention.output.dense,
-                    share=False
-                )
-
-        nn.ModuleList([copy.deepcopy(self.context_attn) for _ in range(2)])
-
         self.intermediate = bert_layer.intermediate
         self.output = bert_layer.output
 
@@ -175,8 +138,7 @@ class BERTDecoderLayer(nn.Module):
         self.register_buffer('mask', mask)
 
     def forward(self, inputs, memory_bank, src_pad_mask, tgt_pad_mask,
-                layer_cache=None, step=None,
-                sent_B_memory_bank=None, sent_B_pad_mask=None):
+                layer_cache=None, step=None):
         """
         Args:
             inputs (`FloatTensor`): `[batch_size x 1 x model_dim]`
@@ -204,36 +166,14 @@ class BERTDecoderLayer(nn.Module):
 
         query_norm = self.self_attn_norm(self.self_attn_drop(query) + inputs)
 
-        if self.context_att_type == 'AB':
-            memory_bank = [memory_bank, sent_B_memory_bank]
-            src_pad_mask = [src_pad_mask, sent_B_pad_mask]
-        elif self.context_att_type == 'BA':
-            memory_bank = [sent_B_memory_bank, memory_bank]
-            src_pad_mask = [sent_B_pad_mask, src_pad_mask]
-        else:
-            memory_bank = [memory_bank]
-            src_pad_mask = [src_pad_mask]
-
-        mid, attn = self.context_attn(memory_bank[0], memory_bank[0],
+        mid, attn = self.context_attn(memory_bank, memory_bank,
                                       query_norm,
-                                      mask=src_pad_mask[0],
+                                      mask=src_pad_mask,
                                       layer_cache=layer_cache,
                                       type="context")
 
         mid_norm = self.context_attn_norm(
             self.context_attn_drop(mid) + query_norm)
-
-        if self.context_att_type != 'concat':
-            mid, attn = self.context_attn_2(
-                memory_bank[1], memory_bank[1], mid_norm,
-                mask=src_pad_mask[1],
-                layer_cache=layer_cache,
-                type="context")
-
-            residual_connection = query_norm if self.double_residual \
-                else mid_norm
-            mid_norm = self.context_attn_2_norm(
-                self.context_attn_2_drop(mid) + residual_connection)
 
         intermediate_output = self.intermediate(mid_norm)
         output = self.output(intermediate_output, mid_norm)
@@ -262,8 +202,7 @@ class BERTDecoder(TransformerDecoder):
     """
     """
     def __init__(self, copy_attn, vocab_size, pad_idx,
-                 init_context=False, context_att_type='concat',
-                 double_residual=False, token_type='A'):
+                 init_context=False, token_type='A'):
         super(TransformerDecoder, self).__init__()
 
         # Basic attributes.
@@ -271,8 +210,6 @@ class BERTDecoder(TransformerDecoder):
         self.pad_idx = pad_idx
         self.token_type = token_type
         self.init_context = init_context
-        self.context_att_type = context_att_type
-        self.double_residual = double_residual
 
         # Decoder State
         self.state = {}
@@ -285,8 +222,7 @@ class BERTDecoder(TransformerDecoder):
         self.embeddings = MyBertEmbeddings(bert.embeddings, token_type)
 
         self.transformer_layers = nn.ModuleList(
-            [BERTDecoderLayer(bert_layer, init_context,
-                              context_att_type, double_residual)
+            [BERTDecoderLayer(bert_layer, init_context)
              for bert_layer in bert.encoder.layer])
 
     @classmethod
@@ -297,8 +233,6 @@ class BERTDecoder(TransformerDecoder):
             embeddings.word_lut.weight.size(0),
             embeddings.word_padding_idx,
             opt.bert_decoder_init_context,
-            opt.bert_decoder_context_att_type,
-            opt.transformer_decoder_double_residual,
             opt.bert_decoder_token_type)
 
     def forward(self, tgt, memory_bank, memory_lengths=None, step=None):
@@ -314,29 +248,16 @@ class BERTDecoder(TransformerDecoder):
         src_batch, src_len = src_words.size()
         tgt_batch, tgt_len = tgt_words.size()
 
-        segments_ids = src[:, :, 1].transpose(0, 1)
-
         # Run the forward pass of the TransformerDecoder.
         emb = self.embeddings(tgt_words, step=step)
         assert emb.dim() == 3  # len x batch x embedding_dim
 
         output = emb
         src_memory_bank = memory_bank.transpose(0, 1).contiguous()
-
         # [B, 1, T_src]
         src_pad_mask = src_words.data.eq(self.pad_idx).unsqueeze(1)
         # [B, 1, T_tgt]
         tgt_pad_mask = tgt_words.data.eq(self.pad_idx).unsqueeze(1)
-
-        if self.context_att_type != 'concat':
-            sent_A_memory_bank, sent_B_memory_bank, \
-                sent_A_pad_mask, sent_B_pad_mask = \
-                self.split_sent_A_sent_B(segments_ids, src_memory_bank)
-
-            src_memory_bank = sent_A_memory_bank
-            src_pad_mask = sent_A_pad_mask.type_as(src_pad_mask)
-        else:
-            sent_B_memory_bank, sent_B_pad_mask = None, None
 
         for i, layer in enumerate(self.transformer_layers):
             layer_cache = self.state["cache"]["layer_{}".format(i)] \
@@ -347,9 +268,7 @@ class BERTDecoder(TransformerDecoder):
                 src_pad_mask,
                 tgt_pad_mask,
                 layer_cache=layer_cache,
-                step=step,
-                sent_B_memory_bank=sent_B_memory_bank,
-                sent_B_pad_mask=sent_B_pad_mask
+                step=step
                 )
 
         # Process the result and update the attentions.
@@ -369,48 +288,9 @@ class BERTDecoder(TransformerDecoder):
         self.embeddings = MyBertEmbeddings(bert.embeddings, self.token_type)
 
         self.transformer_layers = nn.ModuleList(
-            [BERTDecoderLayer(bert_layer, self.init_context,
-                              self.context_att_type, self.double_residual)
+            [BERTDecoderLayer(bert_layer, self.init_context)
              for bert_layer in bert.encoder.layer])
 
         if not self.init_context:
             for transformer_layer in self.transformer_layers:
                 transformer_layer.context_attn.apply(bert.init_bert_weights)
-
-    def split_sent_A_sent_B(self, segments_ids, src_memory_bank):
-
-        token_type = (segments_ids > 0)
-        sent_A_lengths = ((token_type.cumsum(1) == 1) & token_type).max(1)[1]
-        sent_A_memory_bank = ((segments_ids == 0).type_as(
-            src_memory_bank
-            ).unsqueeze(-1)*src_memory_bank)[:, :sent_A_lengths.max()]
-
-        unrolled_sent_B = ((segments_ids == 1).type_as(
-            src_memory_bank).unsqueeze(-1) * src_memory_bank)
-        sent_B_lengths = (segments_ids == 1).sum(dim=1)
-
-        extra_padding = \
-            segments_ids.size(1) - (sent_A_lengths + sent_B_lengths)
-
-        sent_B_memory_bank = torch.stack([
-            torch.roll(
-                x_i,
-                shifts=int(sent_B_lengths[i] + extra_padding[i]),
-                dims=0
-                ) for i, x_i in enumerate(
-                    torch.unbind(unrolled_sent_B, dim=0))], dim=0)
-        sent_B_memory_bank = sent_B_memory_bank[:, :sent_B_lengths.max()]
-
-        sent_A_pad_mask = segments_ids[:, :sent_A_lengths.max()].unsqueeze(1)
-        sent_B_pad_mask = \
-            torch.stack([torch.roll(
-                x_i,
-                shifts=int(sent_B_lengths[i] + extra_padding[i]),
-                dims=0
-                ) for i, x_i in enumerate(
-                    torch.unbind(segments_ids, dim=0))], dim=0)
-        sent_B_pad_mask = \
-            sent_B_pad_mask[:, :sent_B_lengths.max()].eq(0).unsqueeze(1)
-
-        return sent_A_memory_bank, sent_B_memory_bank, \
-            sent_A_pad_mask, sent_B_pad_mask

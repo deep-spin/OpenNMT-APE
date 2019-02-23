@@ -98,17 +98,6 @@ def model_opts(parser):
                        'bert-base-chinese'],
               help="""Type of BERT model for decoder.""")
 
-    group.add(
-          '--bert_decoder_context_att_type', '-bert_decoder_context_att_type',
-          type=str, default='concat',
-          choices=['concat', 'AB', 'BA'],
-          help="""Type of context attention in decoder.""")
-
-    group.add('--transformer_decoder_double_residual',
-              '-transformer_decoder_double_residual',
-              action="store_true",
-              help='when double context att, what to do with res connections.')
-
     group.add('--bert_decoder_init_context', '-bert_decoder_init_context',
               action="store_true",
               help='Initialize context attn with self attention weights.')
