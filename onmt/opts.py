@@ -527,6 +527,11 @@ def train_opts(parser):
     group.add('--warmup_steps', '-warmup_steps', type=int, default=4000,
               help="Number of warmup steps for custom decay.")
 
+    group.add('--bert_schedule', '-bert_schedule', type=str,
+              default="warmup_constant",
+              choices=['warmup_constant', 'warmup_linear', 'warmup_cosine'],
+              help="Use a custom decay rate.")
+
     group = parser.add_argument_group('Logging')
     group.add('--report_every', '-report_every', type=int, default=50,
               help="Print stats at this interval.")
