@@ -102,7 +102,7 @@ def build_torch_optimizer(model, opt):
                              b2=opt.adam_beta2,
                              warmup=warmup,
                              schedule=opt.bert_schedule,
-                             t_total=opt.train_steps)
+                             t_total=opt.bert_final_step)
     elif opt.optim == 'fusedadam':
         import apex
         optimizer = apex.optimizers.FusedAdam(
