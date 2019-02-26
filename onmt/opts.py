@@ -533,6 +533,8 @@ def train_opts(parser):
               help="Use a custom decay rate.")
     group.add('--bert_final_step', '-bert_final_step', type=int, default=5000,
               help="Step in which schedule finished decaying.")
+    group.add('--bert_l2', '-bert_l2', type=float, default=0.01,
+              help="L2 norm used in bertadam.")
 
     group = parser.add_argument_group('Logging')
     group.add('--report_every', '-report_every', type=int, default=50,

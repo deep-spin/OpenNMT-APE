@@ -90,7 +90,7 @@ def build_torch_optimizer(model, opt):
             elif any(nd in name for nd in no_decay):
                 no_decay_params.append(param)
         grouped_parameters = [
-            {'params': decay_params, 'weight_decay': 0.01},
+            {'params': decay_params, 'weight_decay': opt.bert_l2},
             {'params': no_decay_params, 'weight_decay': 0.0}
         ]
         # warmup = Proportion of training to perform
