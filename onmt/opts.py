@@ -531,7 +531,7 @@ def train_opts(parser):
               default="warmup_linear",
               choices=['warmup_constant', 'warmup_linear', 'warmup_cosine'],
               help="Use a custom decay rate.")
-    group.add('--bert_final_step', '-bert_final_step', type=int, default=5000,
+    group.add('--bert_final_step', '-bert_final_step', type=int, default=-1,
               help="Step in which schedule finished decaying.")
     group.add('--bert_l2', '-bert_l2', type=float, default=0.01,
               help="L2 norm used in bertadam.")
