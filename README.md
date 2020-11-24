@@ -1,5 +1,6 @@
 # OpenNMT-APE: Fork of OpenNMT that implements the model described in "A Simple and Effective Approach to Automatic Post-Editing with Transfer Learning"
 
+Note: This repository is no longer being maintained and the packages it uses are now very outdated (particularly Hugging Face's `pytorch-pretrained-BERT`, which is now called [transformers](https://github.com/huggingface/transformers). Pull requests to update this repository are very welcome!
 
 ## Abstract
 
